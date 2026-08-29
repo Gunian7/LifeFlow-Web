@@ -3,9 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "wrangler dev --config wrangler.toml",
+    "deploy": "wrangler deploy --config wrangler.toml",
     "build": "tsc -p tsconfig.api.json",
-    "test": "vitest run apps/api"
+    "test": "vitest run src"
   },
   "dependencies": {
     "hono": "latest"
