@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:api": "npm --prefix apps/api run build",
+    "dev:api": "npm --prefix apps/api run dev",
     "test": "vitest run",
     "test:watch": "vitest"
   },

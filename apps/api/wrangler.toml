@@ -1,0 +1,10 @@
+name = "lifeflow-api"
+main = "src/index.ts"
+compatibility_date = "2026-08-29"
+workers_dev = true
+
+[vars]
+# Non-secret defaults only. Put the provider key in a Worker secret:
+# npx wrangler secret put LLM_API_KEY
+LLM_MODEL = "gpt-5.4"
+LLM_BASE_URL = "https://api.openai.com/v1"
