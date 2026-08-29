@@ -224,6 +224,28 @@ export function parseImport(raw: string): ImportResult {
   return { ok: true, tasks: document.tasks as StoredTask[] }
 }
 
+export type InventoryGroupKey = 'today' | 'waiting' | 'needsEstimate' | 'completed'
+export interface InventoryItem { taskId: string; title: string; minutes?: number; recurring: boolean; pinned: boolean }
+export interface InventoryGroup { key: InventoryGroupKey; items: InventoryItem[] }
+export function inventory(tasks: StoredTask[], scheduledIds: string[]): InventoryGroup[] {
+  const keys: InventoryGroupKey[] = ['today', 'waiting', 'needsEstimate', 'completed']
+  const groups = new Map<InventoryGroupKey, InventoryItem[]>()
+  for (const task of tasks) {
+    if (task.status === 'cancelled') continue
+    const key: InventoryGroupKey = task.status === 'completed' ? 'completed' : (scheduledIds.includes(task.id) || task.status === 'inProgress') ? 'today' : task.targetDurationMinutes === undefined ? 'needsEstimate' : 'waiting'
+    const item: InventoryItem = { taskId: task.id, title: task.title, minutes: task.targetDurationMinutes, recurring: task.templateId !== undefined, pinned: task.lockedStartAt !== undefined }
+    groups.set(key, [...(groups.get(key) ?? []), item])
+  }
+  const result: InventoryGroup[] = []
+  for (const key of keys) {
+    const items = groups.get(key)
+    if (!items?.length) continue
+    items.sort((a, b) => a.title.localeCompare(b.title))
+    result.push({ key, items })
+  }
+  return result
+}
+
 
 type Slot = { start: number; end: number }
 const MINUTE = 60_000
