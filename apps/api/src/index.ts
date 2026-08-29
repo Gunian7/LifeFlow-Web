@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { cors } from 'hono/cors'
 import { handleOrder, type OrderProvider } from './order'
 import { createOpenAiCompatibleProvider } from './provider'
 
@@ -10,6 +11,8 @@ type Bindings = {
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
+
+app.use('*', cors({ origin: 'https://gunian7.github.io', allowMethods: ['GET', 'POST', 'OPTIONS'], allowHeaders: ['Content-Type'] }))
 
 app.get('/health', (context) => context.json({ ok: true, service: 'lifeflow-api' }))
 app.post('/v1/ai/order', (context) => {

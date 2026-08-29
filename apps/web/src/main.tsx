@@ -9,6 +9,7 @@ const STORAGE_KEY = 'lifeflow-web-tasks-v1'
 const PLAN_KEY = 'lifeflow-web-plan-v1'
 const TEMPLATE_KEY = 'lifeflow-web-templates-v1'
 const THEME_KEY = 'lifeflow-web-theme-v1'
+const API_URL = 'https://lifeflow-api.mosesbeck761988kdl.workers.dev'
 const today = new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }).format(new Date())
 
 const initialNow = new Date().toISOString()
@@ -73,6 +74,9 @@ function App() {
   const [repeatDays, setRepeatDays] = useState<number[]>([])
   const [pinTime, setPinTime] = useState('')
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+  const [aiState, setAiState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [aiReason, setAiReason] = useState('')
+  const [aiOrder, setAiOrder] = useState<string[]>([])
 
   useEffect(() => {
     localStorage.setItem(THEME_KEY, themeId)
@@ -197,6 +201,20 @@ function App() {
     }
     setTasks((current) => current.map((task) => task.id === editingTask.id ? saved : task))
     setEditingTask(null)
+  }
+
+  async function askAiOrder() {
+    const candidates = tasks.filter((task) => !task.done && task.targetDurationMinutes !== undefined).slice(0, 20).map((task) => ({ id: task.id, title: task.title, durationMinutes: task.targetDurationMinutes!, importance: task.importance }))
+    if (candidates.length === 0) return
+    setAiState('loading'); setAiReason('')
+    try {
+      const response = await fetch(`${API_URL}/v1/ai/order`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tasks: candidates }) })
+      const result = await response.json() as { ok?: boolean; order?: string[]; reason?: string }
+      if (!response.ok || !result.ok || !result.order || !result.reason) throw new Error('AI_UNAVAILABLE')
+      setAiOrder(result.order); setAiReason(result.reason); setAiState('ready')
+    } catch {
+      setAiState('error'); setAiReason('AI 暂时不可用，本地计划没有改变。')
+    }
   }
 
   function exportData() {
@@ -356,6 +374,7 @@ function App() {
             <p className="label">为什么在这里</p>
             <ul className="detail-list"><li>{selectedTask.importance === 'must' ? '你标记了今天需要完成' : '按当前可用时间安排'}</li><li>{selectedTask.targetDurationMinutes ? `预计需要 ${selectedTask.targetDurationMinutes} 分钟` : '需要先补充预计时间'}</li>{selectedBlock?.source === 'manualLock' && <li>这是你手动锁定的时间</li>}</ul>
             <button className="edit-button" type="button" onClick={() => openEditor(selectedTask)}>编辑这件事</button>
+            <div className="ai-advice"><p className="label">AI 建议 · 可选</p>{aiState === 'idle' && <button className="secondary-button" type="button" onClick={askAiOrder}>查看建议顺序</button>}{aiState === 'loading' && <p className="detail-empty">正在整理顺序……</p>}{aiState === 'error' && <p className="error-text">{aiReason}</p>}{aiState === 'ready' && <><p className="detail-empty">{aiReason}</p><p className="ai-order">{aiOrder.map((id) => tasks.find((task) => task.id === id)?.title).filter(Boolean).join(' → ')}</p><small>这只是建议，不会自动改变时间线。</small></>}</div>
           </> : <p className="detail-empty">选择一件事，查看它为什么出现在这里。</p>}
         </aside>
       </div>

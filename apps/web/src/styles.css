@@ -104,6 +104,10 @@ body[data-theme='archive-terminal'] .task-row.is-current { background: color-mix
 .detail-rule { height: 1px; margin: 20px 0; background: var(--line); }
 .detail-list { margin: 0; padding-left: 16px; color: var(--secondary); font-size: 13px; line-height: 2; }
 .detail-empty { color: var(--secondary); font-size: 13px; line-height: 1.8; }
+.ai-advice { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); }
+.ai-advice .secondary-button { margin-top: 10px; }
+.ai-order { margin: 12px 0 6px; color: var(--accent); font-size: 13px; line-height: 1.8; }
+.ai-advice small { color: var(--tertiary); font-size: 11px; }
 .deferred-list { margin-top: 26px; padding-top: 18px; border-top: 1px dashed var(--line); }
 .deferred-row { display: flex; justify-content: space-between; gap: 16px; padding: 9px 0; color: var(--secondary); font-size: 13px; }
 .deferred-row small { color: var(--warning); font-size: 11px; }
