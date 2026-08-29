@@ -39,4 +39,10 @@ describe('portable local data', () => {
   it('exports an empty list without inventing a task', () => {
     expect(parseImport(buildExport([]))).toMatchObject({ ok: true, tasks: [] })
   })
+
+  it('round-trips recurring templates with their task data', () => {
+    const template = { id: 'daily', title: '吃药', importance: 'important' as const, splittable: false, rule: { kind: 'daily' as const, startDate: '2026-08-29' }, createdAt: '2026-08-29T00:00:00Z', updatedAt: '2026-08-29T00:00:00Z', paused: false }
+    const imported = parseImport(buildExport([task], [template]))
+    expect(imported).toMatchObject({ ok: true, templates: [template] })
+  })
 })

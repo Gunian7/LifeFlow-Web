@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { ExistingPlanBlock, PlannerTask, StoredTask, TaskDraft, RecurrenceRule, RecurringTemplate } from '../../../packages/core/src'
-import { buildExport, createTask, createTemplate, editTask, materializeOccurrences, pinTask, replanToday, completeTask, uncompleteTask, unpinTask } from '../../../packages/core/src'
+import { buildExport, createTask, createTemplate, editTask, materializeOccurrences, mergeImportedTasks, parseImport, pinTask, replanToday, completeTask, uncompleteTask, unpinTask } from '../../../packages/core/src'
 import './styles.css'
 
 type LocalTask = StoredTask
@@ -64,6 +64,8 @@ function App() {
   const [editNotes, setEditNotes] = useState('')
   const [editError, setEditError] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [importNotice, setImportNotice] = useState('')
+  const importInputRef = useRef<HTMLInputElement | null>(null)
   const [repeatRule, setRepeatRule] = useState<RecurrenceRule | null>(null)
   const [repeatDays, setRepeatDays] = useState<number[]>([])
   const [pinTime, setPinTime] = useState('')
@@ -166,12 +168,33 @@ function App() {
   }
 
   function exportData() {
-    const blob = new Blob([buildExport(tasks)], { type: 'application/json' })
+    const blob = new Blob([buildExport(tasks, templates)], { type: 'application/json' })
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
     link.download = `lifeflow-${new Date().toISOString().slice(0, 10)}.json`
     link.click()
     URL.revokeObjectURL(link.href)
+  }
+
+  function importData(file: File) {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const parsed = parseImport(String(reader.result ?? ''))
+      if (!parsed.ok) { setImportNotice('这个文件不是可用的 LifeFlow 数据。'); return }
+      const merged = mergeImportedTasks(tasks, parsed.tasks)
+      setTasks(merged.tasks)
+      setTemplates((current) => {
+        const byId = new Map(current.map((template) => [template.id, template]))
+        for (const template of parsed.templates) {
+          const existing = byId.get(template.id)
+          if (!existing || Date.parse(template.updatedAt) > Date.parse(existing.updatedAt)) byId.set(template.id, template)
+        }
+        return [...byId.values()]
+      })
+      setImportNotice(`已导入：新增 ${merged.added} 件，更新 ${merged.replaced} 件；本机保留 ${merged.keptLocal} 件。`)
+    }
+    reader.onerror = () => setImportNotice('读取文件失败，请重试。')
+    reader.readAsText(file)
   }
 
   function deleteAllData() {
@@ -284,8 +307,10 @@ function App() {
 
       {settingsOpen && <section className="edit-card settings-card" aria-label="数据设置">
         <div className="edit-heading"><p className="label">数据</p><button className="link-button" type="button" onClick={() => setSettingsOpen(false)}>收起</button></div>
-        <p className="settings-copy">任务只保存在这台设备的浏览器里。没有账号，也不会自动上传。</p>
-        <div className="settings-actions"><button className="secondary-button" type="button" onClick={exportData}>导出数据</button><button className="danger-button" type="button" onClick={deleteAllData}>删除全部数据</button></div>
+        <p className="settings-copy">任务只保存在这台设备的浏览器里。没有账号，也不会自动上传。导入时，相同任务会保留更新时间较新的一份。</p>
+        <input ref={importInputRef} className="file-input" type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) importData(file); event.currentTarget.value = '' }} />
+        <div className="settings-actions"><button className="secondary-button" type="button" onClick={exportData}>导出数据</button><button className="secondary-button" type="button" onClick={() => importInputRef.current?.click()}>导入数据</button><button className="danger-button" type="button" onClick={deleteAllData}>删除全部数据</button></div>
+        {importNotice && <p className="import-notice">{importNotice}</p>}
       </section>}
 
       <section className="quiet-note"><span className="note-mark">✦</span><p>排不下的时候，我会告诉你原因。<br />不会偷偷吃掉你的休息。</p></section>

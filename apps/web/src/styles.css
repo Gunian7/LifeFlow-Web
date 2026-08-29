@@ -74,6 +74,8 @@ h2 { margin: 8px 0 0; font-size: 21px; font-weight: 600; letter-spacing: -.025em
 .error-text { margin: 8px 0; color: #b4553c; font-size: 13px; }
 .settings-copy { margin: 12px 0 18px; color: #8b8179; font-size: 13px; line-height: 1.7; }
 .settings-actions { display: flex; gap: 10px; }
+.file-input { display: none; }
+.import-notice { margin: 12px 0 0; color: #665d56; font-size: 13px; line-height: 1.6; }
 .secondary-button, .danger-button { border: 0; border-radius: 22px; padding: 11px 18px; }
 .secondary-button { background: #efe4d4; color: #665d56; }
 .danger-button { background: #f3ddd5; color: #a34d3a; }
