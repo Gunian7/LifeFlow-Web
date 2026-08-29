@@ -22,6 +22,10 @@ export interface PlannerTask {
   notes?: string
   place?: string
   completedAt?: string
+  lockedStartAt?: string
+  lockedEndAt?: string
+  templateId?: string
+  occurrenceDate?: string
 }
 
 export type StoredTask = PlannerTask & {
@@ -155,6 +159,36 @@ export function editTask(existing: StoredTask, draft: TaskDraft, now: string): T
 export function completeTask(task: StoredTask, now: string): StoredTask { return { ...task, status: 'completed', done: true, completedAt: now, updatedAt: now } }
 export function uncompleteTask(task: StoredTask, now: string): StoredTask { return { ...task, status: 'inbox', done: false, completedAt: undefined, updatedAt: now } }
 export function deleteTask(tasks: StoredTask[], id: string): StoredTask[] { return tasks.filter(task => task.id !== id) }
+
+export interface PinResult { task?: StoredTask; issue?: 'ESTIMATE_REQUIRED_TO_PIN' | 'INVALID_PIN_TIME' | 'PIN_IN_THE_PAST' }
+function pinMinutes(value: string): number { const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value); return match ? Number(match[1]) * 60 + Number(match[2]) : -1 }
+export function pinTask(task: StoredTask, localTime: string, planningDate: string, timezone: string, now: string): PinResult {
+  const minutes = pinMinutes(localTime)
+  const offset = timezone === 'Asia/Shanghai' ? 480 : timezone === 'UTC' ? 0 : NaN
+  if (task.targetDurationMinutes === undefined) return { issue: 'ESTIMATE_REQUIRED_TO_PIN' }
+  if (minutes < 0 || Number.isNaN(offset)) return { issue: 'INVALID_PIN_TIME' }
+  let start = Date.parse(`${planningDate}T00:00:00Z`) + (minutes - offset) * MINUTE
+  if (minutes < 480) start += DAY
+  if (start < Date.parse(now)) return { issue: 'PIN_IN_THE_PAST' }
+  return { task: { ...task, lockedStartAt: iso(start), lockedEndAt: iso(start + task.targetDurationMinutes * MINUTE), updatedAt: now } }
+}
+export function unpinTask(task: StoredTask, now: string): StoredTask { return { ...task, lockedStartAt: undefined, lockedEndAt: undefined, updatedAt: now } }
+
+export interface RecurrenceRule { kind: 'daily' | 'weekly'; weekdays?: number[]; startDate: string; endDate?: string }
+export interface RecurringTemplate { id: string; title: string; importance: Importance; targetDurationMinutes?: number; splittable: boolean; notes?: string; place?: string; rule: RecurrenceRule; createdAt: string; updatedAt: string; paused: boolean }
+function applies(rule: RecurrenceRule, date: string): boolean {
+  if (date < rule.startDate || (rule.endDate !== undefined && date > rule.endDate)) return false
+  return rule.kind === 'daily' || (rule.weekdays ?? []).includes(new Date(`${date}T00:00:00Z`).getUTCDay())
+}
+export function materializeOccurrences(templates: RecurringTemplate[], existing: StoredTask[], date: string, now: string): StoredTask[] {
+  const result = [...existing]
+  for (const template of templates) {
+    if (template.paused || !applies(template.rule, date) || result.some(task => task.templateId === template.id && task.occurrenceDate === date)) continue
+    result.push({ id: `${template.id}-${date}`, title: template.title, status: 'inbox', importance: template.importance, targetDurationMinutes: template.targetDurationMinutes, splittable: template.splittable, notes: template.notes, place: template.place, createdAt: now, updatedAt: now, done: false, templateId: template.id, occurrenceDate: date })
+  }
+  return result
+}
+
 
 export interface ExportDocument {
   version: 1
