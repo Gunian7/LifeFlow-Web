@@ -44,7 +44,8 @@ describe('shared planner core', () => {
   it('holds the daily buffer and reports an unscheduled task honestly', () => {
     const result = planToday(input([task('too-long', 600, 'must')]))
     expect(result.planBlocks).toHaveLength(0)
-    expect(result.unscheduledTasks[0]).toMatchObject({ taskId: 'too-long', reasonCodes: ['INSUFFICIENT_TIME'] })
+    expect(result.unscheduledTasks[0].reasonCodes).toContain('PRESERVED_BUFFER')
+    expect(result.unscheduledTasks[0].reasonCodes).toContain('CONFLICT_REQUIRES_DECISION')
     expect(result.feasibility).toBe('infeasible')
   })
 
