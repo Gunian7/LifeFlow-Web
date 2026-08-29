@@ -19,6 +19,36 @@ export interface PlannerTask {
   splittable: boolean
   minChunkMinutes?: number
   deadlineAt?: string
+  notes?: string
+  place?: string
+  completedAt?: string
+}
+
+export type StoredTask = PlannerTask & {
+  createdAt: string
+  updatedAt: string
+  done: boolean
+}
+
+export interface TaskDraft {
+  title: string
+  importance: Importance
+  splittable: boolean
+  notes?: string
+  place?: string
+  targetDurationMinutes?: number
+  deadlineAt?: string
+}
+
+export interface TaskIssue {
+  code: string
+  fieldPath: string
+  message: string
+}
+
+export interface TaskEditResult {
+  task?: StoredTask
+  issues: TaskIssue[]
 }
 
 export interface PlannerFixedBlock {
@@ -90,6 +120,41 @@ export interface ReplanResult extends PlannerResult {
   stalePlanBlocks: PlanBlock[]
   changes: PlanChange[]
 }
+
+function cleanOptional(value: string | undefined): string | undefined {
+  const clean = value?.trim()
+  return clean ? clean : undefined
+}
+
+function taskFromDraft(draft: TaskDraft, id: string, now: string, existing?: StoredTask): StoredTask {
+  const target = draft.targetDurationMinutes
+  const splittable = draft.splittable && target !== undefined && target > 50
+  return {
+    id, title: draft.title.trim(), status: existing?.status ?? 'inbox', importance: draft.importance,
+    targetDurationMinutes: target, minimumDurationMinutes: target === undefined ? undefined : (splittable ? 25 : target),
+    splittable, minChunkMinutes: splittable ? 25 : undefined, deadlineAt: cleanOptional(draft.deadlineAt),
+    notes: cleanOptional(draft.notes), place: cleanOptional(draft.place), createdAt: existing?.createdAt ?? now,
+    updatedAt: now, completedAt: existing?.completedAt, done: existing?.done ?? false,
+  }
+}
+
+export function createTask(draft: TaskDraft, now: string, id: string): TaskEditResult {
+  if (!draft.title.trim()) return { issues: [{ code: 'TITLE_REQUIRED', fieldPath: 'title', message: 'title required' }] }
+  const target = draft.targetDurationMinutes
+  if (target !== undefined && (!Number.isInteger(target) || target <= 0)) return { issues: [{ code: 'INVALID_TASK_DURATION', fieldPath: 'targetDurationMinutes', message: 'positive integer required' }] }
+  return { task: taskFromDraft(draft, id, now), issues: [] }
+}
+
+export function editTask(existing: StoredTask, draft: TaskDraft, now: string): TaskEditResult {
+  if (!draft.title.trim()) return { issues: [{ code: 'TITLE_REQUIRED', fieldPath: 'title', message: 'title required' }] }
+  const target = draft.targetDurationMinutes
+  if (target !== undefined && (!Number.isInteger(target) || target <= 0)) return { issues: [{ code: 'INVALID_TASK_DURATION', fieldPath: 'targetDurationMinutes', message: 'positive integer required' }] }
+  return { task: taskFromDraft(draft, existing.id, now, existing), issues: [] }
+}
+
+export function completeTask(task: StoredTask, now: string): StoredTask { return { ...task, status: 'completed', done: true, completedAt: now, updatedAt: now } }
+export function uncompleteTask(task: StoredTask, now: string): StoredTask { return { ...task, status: 'inbox', done: false, completedAt: undefined, updatedAt: now } }
+export function deleteTask(tasks: StoredTask[], id: string): StoredTask[] { return tasks.filter(task => task.id !== id) }
 
 type Slot = { start: number; end: number }
 const MINUTE = 60_000

@@ -1,22 +1,23 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import type { ExistingPlanBlock, PlannerTask } from '../../../packages/core/src'
-import { replanToday } from '../../../packages/core/src'
+import type { ExistingPlanBlock, PlannerTask, StoredTask, TaskDraft } from '../../../packages/core/src'
+import { createTask, editTask, replanToday, completeTask, uncompleteTask } from '../../../packages/core/src'
 import './styles.css'
 
-type LocalTask = PlannerTask & { done: boolean; place?: string }
+type LocalTask = StoredTask
 const STORAGE_KEY = 'lifeflow-web-tasks-v1'
 const PLAN_KEY = 'lifeflow-web-plan-v1'
 const today = new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }).format(new Date())
 
+const initialNow = new Date().toISOString()
 const initialTasks: LocalTask[] = [
-  { id: 'welcome', title: '试着加一件自己的事', status: 'inbox', importance: 'must', targetDurationMinutes: 30, splittable: false, done: false },
+  { id: 'welcome', title: '试着加一件自己的事', status: 'inbox', importance: 'must', targetDurationMinutes: 30, splittable: false, done: false, createdAt: initialNow, updatedAt: initialNow },
 ]
 
 function loadTasks(): LocalTask[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) as LocalTask[] : initialTasks
+    return raw ? (JSON.parse(raw) as LocalTask[]).map((task) => ({ ...task, createdAt: task.createdAt ?? new Date().toISOString(), updatedAt: task.updatedAt ?? new Date().toISOString(), done: task.done ?? task.status === 'completed' })) : initialTasks
   } catch {
     return initialTasks
   }
@@ -37,6 +38,12 @@ function App() {
   const [title, setTitle] = useState('')
   const [minutes, setMinutes] = useState('30')
   const [showAll, setShowAll] = useState(false)
+  const [editingTask, setEditingTask] = useState<LocalTask | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editMinutes, setEditMinutes] = useState('')
+  const [editPlace, setEditPlace] = useState('')
+  const [editNotes, setEditNotes] = useState('')
+  const [editError, setEditError] = useState('')
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks))
@@ -66,20 +73,53 @@ function App() {
     const cleanTitle = title.trim()
     if (!cleanTitle) return
     const parsed = Number.parseInt(minutes, 10)
-    const next: LocalTask = {
-      id: crypto.randomUUID(), title: cleanTitle, status: 'inbox', importance: 'important',
+    const draft: TaskDraft = {
+      title: cleanTitle,
+      importance: 'important',
+      splittable: false,
       targetDurationMinutes: Number.isInteger(parsed) && parsed > 0 ? parsed : undefined,
-      splittable: false, done: false,
     }
-    setTasks((current) => [...current, next])
+    const created = createTask(draft, new Date().toISOString(), crypto.randomUUID())
+    if (!created.task) return
+    setTasks((current) => [...current, created.task!])
     setTitle('')
     setMinutes('30')
   }
 
   function toggleTask(id: string) {
     setTasks((current) => current.map((task) => task.id === id
-      ? { ...task, done: !task.done, status: task.done ? 'inbox' : 'completed' }
+      ? (task.done ? uncompleteTask(task, new Date().toISOString()) : completeTask(task, new Date().toISOString()))
       : task))
+  }
+
+  function openEditor(task: LocalTask) {
+    setEditingTask(task)
+    setEditTitle(task.title)
+    setEditMinutes(task.targetDurationMinutes?.toString() ?? '')
+    setEditPlace(task.place ?? '')
+    setEditNotes(task.notes ?? '')
+    setEditError('')
+  }
+
+  function saveEdit() {
+    if (!editingTask) return
+    const rawMinutes = editMinutes.trim()
+    const parsed = Number.parseInt(rawMinutes, 10)
+    const draft: TaskDraft = {
+      title: editTitle,
+      importance: editingTask.importance,
+      splittable: editingTask.splittable,
+      place: editPlace,
+      notes: editNotes,
+      targetDurationMinutes: rawMinutes ? parsed : undefined,
+    }
+    const result = editTask(editingTask, draft, new Date().toISOString())
+    if (!result.task) {
+      setEditError(result.issues[0]?.code === 'TITLE_REQUIRED' ? '给它起个名字就好。' : '时间要填正整数，或者留空。')
+      return
+    }
+    setTasks((current) => current.map((task) => task.id === editingTask.id ? result.task! : task))
+    setEditingTask(null)
   }
 
   return (
@@ -115,11 +155,14 @@ function App() {
             const block = plan.planBlocks.find((item) => item.taskId === task.id)
             const start = block ? new Date(block.startAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '未安排'
             return (
-              <button className={`task-row ${task.done ? 'is-done' : ''}`} type="button" key={task.id} onClick={() => toggleTask(task.id)}>
-                <span className="task-check" aria-hidden="true">{task.done ? '✓' : ''}</span>
-                <span className="task-copy"><span className="task-title">{task.title}</span><span className="task-place">{task.targetDurationMinutes ? `${task.targetDurationMinutes} 分钟` : '还没估时间'}</span></span>
+              <div className={`task-row ${task.done ? 'is-done' : ''}`} key={task.id}>
+                <button className="task-main" type="button" onClick={() => toggleTask(task.id)}>
+                  <span className="task-check" aria-hidden="true">{task.done ? '✓' : ''}</span>
+                  <span className="task-copy"><span className="task-title">{task.title}</span><span className="task-place">{task.targetDurationMinutes ? `${task.targetDurationMinutes} 分钟` : '还没估时间'}{task.place ? ` · ${task.place}` : ''}</span>{task.notes && <span className="task-notes">{task.notes}</span>}</span>
+                </button>
                 <span className="task-time"><strong>{start}</strong><small>{task.done ? '已完成' : block ? '已安排' : '等着'}</small></span>
-              </button>
+                <button className="edit-button" type="button" onClick={() => openEditor(task)}>改</button>
+              </div>
             )
           })}
         </div>
@@ -131,6 +174,15 @@ function App() {
         <span className="minutes-label">分</span>
         <button className="add-button" type="button" onClick={addTask}>加</button>
       </section>
+
+      {editingTask && <section className="edit-card" aria-label="编辑任务">
+        <div className="edit-heading"><p className="label">编辑任务</p><button className="link-button" type="button" onClick={() => setEditingTask(null)}>取消</button></div>
+        <input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} placeholder="要做什么？" />
+        <div className="edit-grid"><input value={editMinutes} onChange={(event) => setEditMinutes(event.target.value)} placeholder="分钟" inputMode="numeric" /><input value={editPlace} onChange={(event) => setEditPlace(event.target.value)} placeholder="在哪里" /></div>
+        <textarea value={editNotes} onChange={(event) => setEditNotes(event.target.value)} placeholder="描述" rows={3} />
+        {editError && <p className="error-text">{editError}</p>}
+        <button className="add-button save-edit" type="button" onClick={saveEdit}>保存修改</button>
+      </section>}
 
       <section className="quiet-note"><span className="note-mark">✦</span><p>排不下的时候，我会告诉你原因。<br />不会偷偷吃掉你的休息。</p></section>
       <footer><span>本地保存 · 不需要账号</span><button className="link-button" type="button" onClick={() => setShowAll(true)}>查看全部任务</button></footer>
