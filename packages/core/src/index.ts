@@ -176,6 +176,9 @@ export function unpinTask(task: StoredTask, now: string): StoredTask { return { 
 
 export interface RecurrenceRule { kind: 'daily' | 'weekly'; weekdays?: number[]; startDate: string; endDate?: string }
 export interface RecurringTemplate { id: string; title: string; importance: Importance; targetDurationMinutes?: number; splittable: boolean; notes?: string; place?: string; rule: RecurrenceRule; createdAt: string; updatedAt: string; paused: boolean }
+export function createTemplate(id: string, title: string, rule: RecurrenceRule, now: string): RecurringTemplate {
+  return { id, title, importance: 'important', splittable: false, rule, createdAt: now, updatedAt: now, paused: false }
+}
 function applies(rule: RecurrenceRule, date: string): boolean {
   if (date < rule.startDate || (rule.endDate !== undefined && date > rule.endDate)) return false
   return rule.kind === 'daily' || (rule.weekdays ?? []).includes(new Date(`${date}T00:00:00Z`).getUTCDay())
@@ -361,6 +364,16 @@ export function replanToday(input: ReplanInput): ReplanResult {
   const stalePlanBlocks: PlanBlock[] = []
   const protectedFixed: PlannerFixedBlock[] = []
 
+  // A task's own lock is a user fact even before the first plan snapshot exists.
+  // Materialize it as a protected block so the first Replan and every later one
+  // follow the same rule.
+  for (const task of input.tasks) {
+    if (task.lockedStartAt === undefined || task.lockedEndAt === undefined) continue
+    if (['completed', 'cancelled', 'skipped'].includes(task.status)) continue
+    protectedIds.add(task.id)
+    protectedFixed.push({ id: `task-lock-${task.id}`, title: task.title, startAt: task.lockedStartAt, endAt: task.lockedEndAt, strength: 'hard', movable: false })
+  }
+
   for (const old of input.existingBlocks) {
     const task = input.tasks.find(candidate => candidate.id === old.taskId)
     if (!task || ['completed', 'cancelled', 'skipped'].includes(task.status)) continue
@@ -382,6 +395,11 @@ export function replanToday(input: ReplanInput): ReplanResult {
     fixedBlocks: [...input.fixedBlocks, ...protectedFixed],
   })
   const planBlocks = [...planned.planBlocks]
+  for (const task of input.tasks) {
+    if (!protectedIds.has(task.id) || task.lockedStartAt === undefined || task.lockedEndAt === undefined) continue
+    if (planBlocks.some(block => block.taskId === task.id)) continue
+    planBlocks.push({ taskId: task.id, startAt: task.lockedStartAt, endAt: task.lockedEndAt, source: 'manualLock', reasonCodes: ['MANUALLY_LOCKED'] })
+  }
   for (const old of input.existingBlocks) {
     if (!protectedIds.has(old.taskId) || stalePlanBlocks.some(block => block.taskId === old.taskId)) continue
     planBlocks.push({ taskId: old.taskId, startAt: old.startAt, endAt: old.endAt, source: old.source, reasonCodes: old.source === 'manualLock' ? ['MANUALLY_LOCKED'] : ['IN_PROGRESS_PROTECTED'] })

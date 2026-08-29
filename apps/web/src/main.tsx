@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import type { ExistingPlanBlock, PlannerTask, StoredTask, TaskDraft } from '../../../packages/core/src'
-import { buildExport, createTask, editTask, replanToday, completeTask, uncompleteTask } from '../../../packages/core/src'
+import type { ExistingPlanBlock, PlannerTask, StoredTask, TaskDraft, RecurrenceRule, RecurringTemplate } from '../../../packages/core/src'
+import { buildExport, createTask, createTemplate, editTask, materializeOccurrences, pinTask, replanToday, completeTask, uncompleteTask, unpinTask } from '../../../packages/core/src'
 import './styles.css'
 
 type LocalTask = StoredTask
 const STORAGE_KEY = 'lifeflow-web-tasks-v1'
 const PLAN_KEY = 'lifeflow-web-plan-v1'
+const TEMPLATE_KEY = 'lifeflow-web-templates-v1'
 const today = new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }).format(new Date())
 
 const initialNow = new Date().toISOString()
@@ -32,9 +33,19 @@ function loadPlan(): ExistingPlanBlock[] {
   }
 }
 
+function loadTemplates(): RecurringTemplate[] {
+  try {
+    const raw = localStorage.getItem(TEMPLATE_KEY)
+    return raw ? JSON.parse(raw) as RecurringTemplate[] : []
+  } catch {
+    return []
+  }
+}
+
 function App() {
   const [tasks, setTasks] = useState<LocalTask[]>(loadTasks)
   const [existingBlocks, setExistingBlocks] = useState<ExistingPlanBlock[]>(loadPlan)
+  const [templates, setTemplates] = useState<RecurringTemplate[]>(loadTemplates)
   const [title, setTitle] = useState('')
   const [minutes, setMinutes] = useState('30')
   const [showAll, setShowAll] = useState(false)
@@ -45,10 +56,22 @@ function App() {
   const [editNotes, setEditNotes] = useState('')
   const [editError, setEditError] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [repeatRule, setRepeatRule] = useState<RecurrenceRule | null>(null)
+  const [repeatDays, setRepeatDays] = useState<number[]>([])
+  const [pinTime, setPinTime] = useState('')
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks))
   }, [tasks])
+  useEffect(() => {
+    localStorage.setItem(TEMPLATE_KEY, JSON.stringify(templates))
+  }, [templates])
+
+  useEffect(() => {
+    const date = new Date().toISOString().slice(0, 10)
+    const materialized = materializeOccurrences(templates, tasks, date, new Date().toISOString())
+    if (materialized.length !== tasks.length) setTasks(materialized)
+  }, [templates])
 
   const plannerInput = useMemo(() => ({
     now: new Date().toISOString(),
@@ -100,6 +123,9 @@ function App() {
     setEditPlace(task.place ?? '')
     setEditNotes(task.notes ?? '')
     setEditError('')
+    setPinTime(task.lockedStartAt ? new Date(task.lockedStartAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '')
+    setRepeatRule(null)
+    setRepeatDays([])
   }
 
   function saveEdit() {
@@ -119,7 +145,15 @@ function App() {
       setEditError(result.issues[0]?.code === 'TITLE_REQUIRED' ? '给它起个名字就好。' : '时间要填正整数，或者留空。')
       return
     }
-    setTasks((current) => current.map((task) => task.id === editingTask.id ? result.task! : task))
+    let saved = result.task!
+    if (pinTime) {
+      const pinned = pinTask(saved, pinTime, new Date().toISOString().slice(0, 10), 'Asia/Shanghai', new Date().toISOString())
+      if (!pinned.task) { setEditError('这个时间已经过去了，或者时长还没填。'); return }
+      saved = pinned.task
+    } else if (editingTask.lockedStartAt) {
+      saved = unpinTask(saved, new Date().toISOString())
+    }
+    setTasks((current) => current.map((task) => task.id === editingTask.id ? saved : task))
     setEditingTask(null)
   }
 
@@ -139,6 +173,26 @@ function App() {
     setTasks([])
     setExistingBlocks([])
     setSettingsOpen(false)
+  }
+
+  function toggleRepeatDay(day: number) {
+    setRepeatDays((current) => current.includes(day) ? current.filter((value) => value !== day) : [...current, day])
+  }
+
+  function saveRepeat() {
+    if (!editingTask || (repeatRule?.kind === 'weekly' && repeatDays.length === 0)) return
+    const kind = repeatRule?.kind ?? 'daily'
+    const rule: RecurrenceRule = { kind, weekdays: kind === 'weekly' ? repeatDays : undefined, startDate: new Date().toISOString().slice(0, 10) }
+    const template = createTemplate(crypto.randomUUID(), editingTask.title, rule, new Date().toISOString())
+    template.importance = editingTask.importance; template.targetDurationMinutes = editingTask.targetDurationMinutes; template.splittable = editingTask.splittable; template.notes = editingTask.notes; template.place = editingTask.place
+    setTemplates((current) => [...current, template])
+    setTasks((current) => current.map((task) => task.id === editingTask.id ? { ...task, templateId: template.id, occurrenceDate: rule.startDate } : task))
+    setEditingTask(null); setRepeatRule(null); setRepeatDays([])
+  }
+
+  function stopRepeat(task: LocalTask) {
+    if (!task.templateId) return
+    setTemplates((current) => current.map((item) => item.id === task.templateId ? { ...item, paused: true } : item))
   }
 
   return (
@@ -200,6 +254,15 @@ function App() {
         <input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} placeholder="要做什么？" />
         <div className="edit-grid"><input value={editMinutes} onChange={(event) => setEditMinutes(event.target.value)} placeholder="分钟" inputMode="numeric" /><input value={editPlace} onChange={(event) => setEditPlace(event.target.value)} placeholder="在哪里" /></div>
         <textarea value={editNotes} onChange={(event) => setEditNotes(event.target.value)} placeholder="描述" rows={3} />
+        <div className="edit-grid"><input type="time" value={pinTime} onChange={(event) => setPinTime(event.target.value)} /><span className="edit-hint">留空表示自动安排</span></div>
+        <div className="repeat-panel">
+          <span className="edit-hint">重复</span>
+          <button className={repeatRule?.kind === 'daily' ? 'choice active' : 'choice'} type="button" onClick={() => setRepeatRule({ kind: 'daily', startDate: new Date().toISOString().slice(0, 10) })}>每天</button>
+          <button className={repeatRule?.kind === 'weekly' ? 'choice active' : 'choice'} type="button" onClick={() => setRepeatRule({ kind: 'weekly', weekdays: repeatDays, startDate: new Date().toISOString().slice(0, 10) })}>每周</button>
+          {repeatRule?.kind === 'weekly' && <div className="weekday-list">{['日', '一', '二', '三', '四', '五', '六'].map((label, index) => <button className={repeatDays.includes(index) ? 'day active' : 'day'} type="button" key={label} onClick={() => toggleRepeatDay(index)}>{label}</button>)}</div>}
+          {repeatRule && <button className="secondary-button" type="button" onClick={saveRepeat}>保存重复规则</button>}
+          {editingTask.templateId && <button className="link-button" type="button" onClick={() => stopRepeat(editingTask)}>暂停重复</button>}
+        </div>
         {editError && <p className="error-text">{editError}</p>}
         <button className="add-button save-edit" type="button" onClick={saveEdit}>保存修改</button>
       </section>}

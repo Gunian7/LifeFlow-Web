@@ -59,6 +59,12 @@ h2 { margin: 8px 0 0; font-size: 21px; font-weight: 600; letter-spacing: -.025em
 .edit-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .edit-card input, .edit-card textarea { width: 100%; border: 1px solid #eadccc; border-radius: 14px; outline: 0; padding: 13px 15px; background: #fffdf9; color: #2d2926; }
 .edit-card textarea { resize: vertical; line-height: 1.6; }
+.edit-hint { align-self: center; color: #8b8179; font-size: 13px; }
+.repeat-panel { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.choice, .day { border: 1px solid #eadccc; border-radius: 18px; padding: 7px 13px; background: #fffdf9; color: #8b8179; }
+.choice.active, .day.active { border-color: #a65a3a; background: #f4d8c9; color: #8f432e; }
+.weekday-list { display: flex; gap: 5px; width: 100%; margin-top: 3px; }
+.day { width: 32px; padding: 6px 0; text-align: center; }
 .edit-card > input { margin-bottom: 10px; }
 .edit-grid { display: grid; grid-template-columns: 120px 1fr; gap: 10px; margin-bottom: 10px; }
 .save-edit { width: 100%; min-height: 46px; margin-top: 12px; }
