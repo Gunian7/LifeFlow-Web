@@ -1,4 +1,4 @@
-export type ThemeId = 'warm-system' | 'quiet-dark' | 'paper-editorial'
+export type ThemeId = 'archive-terminal' | 'warm-system' | 'quiet-dark' | 'paper-editorial'
 
 export interface ThemeTokens {
   background: string
@@ -27,6 +27,12 @@ export interface ThemeDefinition {
 }
 
 export const themes: Record<ThemeId, ThemeDefinition> = {
+  'archive-terminal': {
+    id: 'archive-terminal', name: 'Archive Terminal', description: '低饱和档案终端与系统菜单感',
+    tokens: {
+      background: '#CAC8B7', surface: '#D8D6C5', text: '#2B2C27', secondary: '#5F5E55', tertiary: '#999687', line: '#9A998B', accent: '#35352F', accentSoft: '#B5B2A2', success: '#667866', warning: '#8A806E', error: '#795852', info: '#626F78', radius: '2px', shadow: 'none', font: "'IBM Plex Sans', 'Noto Sans SC', system-ui, sans-serif", headingWeight: '500',
+    },
+  },
   'warm-system': {
     id: 'warm-system', name: 'Warm System', description: '温暖、精确、安静的系统工作台',
     tokens: {
@@ -47,6 +53,6 @@ export const themes: Record<ThemeId, ThemeDefinition> = {
   },
 }
 
-export const themeIds: ThemeId[] = ['warm-system', 'quiet-dark', 'paper-editorial']
-export const defaultTheme: ThemeDefinition = themes['warm-system']
+export const themeIds: ThemeId[] = ['archive-terminal', 'warm-system', 'quiet-dark', 'paper-editorial']
+export const defaultTheme: ThemeDefinition = themes['archive-terminal']
 export function getTheme(id: ThemeId | string | undefined): ThemeDefinition { return id && id in themes ? themes[id as ThemeId] : defaultTheme }

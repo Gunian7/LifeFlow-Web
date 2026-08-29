@@ -20,6 +20,13 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; background: var(--bg); }
+body[data-theme='archive-terminal'] { background-color: var(--bg); background-image: radial-gradient(rgba(43,44,39,.10) .55px, transparent .55px), repeating-linear-gradient(135deg, transparent 0, transparent 38px, rgba(95,94,85,.045) 39px, transparent 40px); background-size: 5px 5px, 100% 100%; }
+body[data-theme='archive-terminal'] .shell { text-shadow: .15px .15px 0 rgba(43,44,39,.12); }
+body[data-theme='archive-terminal'] .header, body[data-theme='archive-terminal'] .timeline-area, body[data-theme='archive-terminal'] .sidebar, body[data-theme='archive-terminal'] .detail-panel { border-color: rgba(74,73,65,.55); }
+body[data-theme='archive-terminal'] .header::after { content: '· · ·  //  LIFE SYSTEM  //  · · ·'; position: absolute; left: 40px; right: 40px; bottom: 7px; color: rgba(43,44,39,.28); font: 9px/1 monospace; letter-spacing: .25em; pointer-events: none; }
+body[data-theme='archive-terminal'] .header { position: relative; }
+body[data-theme='archive-terminal'] .section-heading h2::before { content: '01 / '; color: var(--tertiary); font: 11px monospace; letter-spacing: .08em; }
+body[data-theme='archive-terminal'] .detail-panel::before { content: 'STATUS // CONTEXT'; display: block; margin-bottom: 14px; padding: 6px 8px; background: var(--accent); color: var(--surface); font: 10px monospace; letter-spacing: .12em; }
 button, input, textarea { font: inherit; }
 button { cursor: pointer; }
 
@@ -52,6 +59,7 @@ h2 { margin: 7px 0 0; font-size: 21px; font-weight: 600; letter-spacing: -.02em;
 .task-row { display: flex; width: 100%; align-items: center; gap: 12px; min-height: 82px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: inherit; text-align: left; transition: background 180ms ease-out; }
 .task-row:hover { background: rgba(255,255,255,.42); }
 .task-row.is-current { border-left: 2px solid var(--accent); padding-left: 10px; background: #fff7ef; }
+body[data-theme='archive-terminal'] .task-row.is-current { background: rgba(255,255,255,.18); }
 .task-main { display: flex; min-width: 0; flex: 1; align-items: center; gap: 14px; border: 0; background: transparent; color: inherit; text-align: left; }
 .task-check { flex: 0 0 auto; width: 18px; height: 18px; border: 1px solid var(--tertiary); border-radius: 50%; }
 .task-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 5px; }
