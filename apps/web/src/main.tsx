@@ -42,6 +42,14 @@ function loadTemplates(): RecurringTemplate[] {
   }
 }
 
+function reasonText(codes: string[]): string {
+  if (codes.includes('ESTIMATE_REQUIRED')) return '还没估时间'
+  if (codes.includes('PRESERVED_BUFFER')) return '需要动用缓冲'
+  if (codes.includes('REST_PROTECTION')) return '会占用休息时间'
+  if (codes.includes('DEADLINE_URGENT')) return '截止时间很近'
+  return '今天时间不够'
+}
+
 function App() {
   const [tasks, setTasks] = useState<LocalTask[]>(loadTasks)
   const [existingBlocks, setExistingBlocks] = useState<ExistingPlanBlock[]>(loadPlan)
@@ -239,6 +247,13 @@ function App() {
               </div>
             )
           })}
+          {showAll && plan.unscheduledTasks.length > 0 && <div className="deferred-list">
+            <p className="label">今天没排进去</p>
+            {plan.unscheduledTasks.map((item) => {
+              const task = tasks.find((candidate) => candidate.id === item.taskId)
+              return task && <div className="deferred-row" key={item.taskId}><span>{task.title}</span><small>{reasonText(item.reasonCodes)}</small></div>
+            })}
+          </div>}
         </div>
       </section>
 
