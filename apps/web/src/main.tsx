@@ -69,6 +69,7 @@ function App() {
   const [repeatRule, setRepeatRule] = useState<RecurrenceRule | null>(null)
   const [repeatDays, setRepeatDays] = useState<number[]>([])
   const [pinTime, setPinTime] = useState('')
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks))
@@ -101,6 +102,8 @@ function App() {
   }, [plan.planBlocks])
   const scheduledIds = new Set(plan.planBlocks.map((block) => block.taskId))
   const visibleTasks = showAll ? tasks : tasks.filter((task) => scheduledIds.has(task.id) || task.done)
+  const selectedTask = tasks.find((task) => task.id === selectedTaskId)
+  const selectedBlock = plan.planBlocks.find((block) => block.taskId === selectedTaskId)
   const changeCount = plan.changes.length
 
   function addTask() {
@@ -240,14 +243,13 @@ function App() {
         </div>
       </header>
 
-      <section className="focus-card" aria-label="当前进行">
-        <span className="focus-dot" />
-        <div>
-          <p className="label">现在</p>
-          <strong>{plan.planBlocks.length ? '计划已经准备好了' : '先放下一件事'}</strong>
-        </div>
-        <span className="muted">{tasks.filter((task) => !task.done).length} 件未完成</span>
-      </section>
+      <div className="workspace">
+        <aside className="sidebar" aria-label="导航与状态">
+          <div className="side-block"><p className="side-title">现在</p><div className="side-line"><span>未完成</span><span>{tasks.filter((task) => !task.done).length}</span></div><div className="side-line"><span>已安排</span><span>{plan.planBlocks.length}</span></div></div>
+          <div className="side-block"><p className="side-title">库存</p><div className="side-line"><span>未排入</span><span>{plan.unscheduledTasks.length}</span></div><div className="side-line"><span>已完成</span><span>{tasks.filter((task) => task.done).length}</span></div></div>
+        </aside>
+        <section className="timeline-area">
+          <section className="focus-line" aria-label="当前进行"><span className="focus-dot" />{plan.planBlocks.length ? '计划已经准备好了' : '先放下一件事'}<span className="muted">{changeCount ? `计划变了 ${changeCount} 处` : ''}</span></section>
 
       <section className="timeline-card" aria-label="今日时间线">
         <div className="section-heading">
@@ -260,8 +262,8 @@ function App() {
             const block = plan.planBlocks.find((item) => item.taskId === task.id)
             const start = block ? new Date(block.startAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '未安排'
             return (
-              <div className={`task-row ${task.done ? 'is-done' : ''}`} key={task.id}>
-                <button className="task-main" type="button" onClick={() => toggleTask(task.id)}>
+              <div className={`task-row ${task.done ? 'is-done' : ''} ${selectedTaskId === task.id ? 'is-selected' : ''}`} key={task.id}>
+                <button className="task-main" type="button" onClick={() => { setSelectedTaskId(task.id); toggleTask(task.id) }}>
                   <span className="task-check" aria-hidden="true">{task.done ? '✓' : ''}</span>
                   <span className="task-copy"><span className="task-title">{task.title}</span><span className="task-place">{task.targetDurationMinutes ? `${task.targetDurationMinutes} 分钟` : '还没估时间'}{task.place ? ` · ${task.place}` : ''}</span>{task.notes && <span className="task-notes">{task.notes}</span>}</span>
                 </button>
@@ -315,6 +317,21 @@ function App() {
 
       <section className="quiet-note"><span className="note-mark">✦</span><p>排不下的时候，我会告诉你原因。<br />不会偷偷吃掉你的休息。</p></section>
       <footer><span>本地保存 · 不需要账号</span><button className="link-button" type="button" onClick={() => setShowAll(true)}>查看全部任务</button></footer>
+        </section>
+        <aside className="detail-panel" aria-label="任务详情">
+          {selectedTask ? <>
+            <p className="label">任务详情</p>
+            <h2 className="detail-title">{selectedTask.title}</h2>
+            {selectedBlock && <p className="detail-time">{new Date(selectedBlock.startAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} — {new Date(selectedBlock.endAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</p>}
+            <p className="detail-meta">{selectedTask.targetDurationMinutes ? `${selectedTask.targetDurationMinutes} 分钟` : '还没估时间'}{selectedTask.place ? ` · ${selectedTask.place}` : ''}</p>
+            {selectedTask.notes && <p className="detail-empty">{selectedTask.notes}</p>}
+            <div className="detail-rule" />
+            <p className="label">为什么在这里</p>
+            <ul className="detail-list"><li>{selectedTask.importance === 'must' ? '你标记了今天需要完成' : '按当前可用时间安排'}</li><li>{selectedTask.targetDurationMinutes ? `预计需要 ${selectedTask.targetDurationMinutes} 分钟` : '需要先补充预计时间'}</li>{selectedBlock?.source === 'manualLock' && <li>这是你手动锁定的时间</li>}</ul>
+            <button className="edit-button" type="button" onClick={() => openEditor(selectedTask)}>编辑这件事</button>
+          </> : <p className="detail-empty">选择一件事，查看它为什么出现在这里。</p>}
+        </aside>
+      </div>
     </main>
   )
 }
