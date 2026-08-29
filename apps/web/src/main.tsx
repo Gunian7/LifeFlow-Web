@@ -249,6 +249,7 @@ function App() {
           <p className="date">{today}</p>
         </div>
         <div className="header-actions">
+          <label className="theme-control"><span>皮肤</span><select aria-label="切换皮肤" value={themeId} onChange={(event) => setThemeId(event.target.value as ThemeId)}>{themeIds.map((id) => <option value={id} key={id}>{getTheme(id).name}</option>)}</select></label>
           <button className="ghost-button" type="button" onClick={() => setShowAll((value) => !value)}>{showAll ? '只看今天' : '全部任务'}</button>
           <button className="ghost-button" type="button" onClick={() => setSettingsOpen((value) => !value)}>设置</button>
         </div>

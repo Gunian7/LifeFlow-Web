@@ -29,6 +29,8 @@ button { cursor: pointer; }
 h1 { margin: 8px 0 6px; font-size: clamp(32px, 4vw, 40px); font-weight: 600; letter-spacing: -.03em; }
 .date { margin: 0; color: var(--secondary); font-size: 14px; }
 .header-actions { display: flex; gap: 20px; }
+.theme-control { display: flex; align-items: center; gap: 7px; color: var(--secondary); font-size: 12px; }
+.theme-control select { border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 8px; background: var(--surface); color: var(--text); font: inherit; }
 .ghost-button, .link-button { border: 0; background: transparent; color: var(--secondary); padding: 8px 0; }
 .ghost-button:hover, .link-button:hover { color: var(--accent); }
 
@@ -131,6 +133,7 @@ footer { display: flex; justify-content: space-between; margin-top: 18px; color:
   .shell { padding: 28px 20px 40px; }
   .header { padding-bottom: 20px; }
   .header-actions { gap: 12px; }
+  .theme-control span { display: none; }
   .workspace { display: block; min-height: 0; }
   .sidebar { display: flex; gap: 22px; overflow-x: auto; padding: 18px 0 12px; border-right: 0; border-bottom: 1px solid var(--line); }
   .side-block { min-width: 130px; padding-bottom: 0; }
