@@ -18,6 +18,7 @@ button { cursor: pointer; }
   padding: 64px 48px 56px;
 }
 .header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 40px; }
+.header-actions { display: flex; gap: 18px; }
 .eyebrow, .label { margin: 0; color: #a79c92; font-size: 12px; letter-spacing: .12em; }
 h1 { margin: 10px 0 10px; font-size: clamp(28px, 5vw, 42px); letter-spacing: -.04em; font-weight: 600; }
 .date { margin: 0; color: #8b8179; font-size: 14px; }
@@ -62,6 +63,11 @@ h2 { margin: 8px 0 0; font-size: 21px; font-weight: 600; letter-spacing: -.025em
 .edit-grid { display: grid; grid-template-columns: 120px 1fr; gap: 10px; margin-bottom: 10px; }
 .save-edit { width: 100%; min-height: 46px; margin-top: 12px; }
 .error-text { margin: 8px 0; color: #b4553c; font-size: 13px; }
+.settings-copy { margin: 12px 0 18px; color: #8b8179; font-size: 13px; line-height: 1.7; }
+.settings-actions { display: flex; gap: 10px; }
+.secondary-button, .danger-button { border: 0; border-radius: 22px; padding: 11px 18px; }
+.secondary-button { background: #efe4d4; color: #665d56; }
+.danger-button { background: #f3ddd5; color: #a34d3a; }
 .empty { margin: 0; padding: 30px 0; color: #a79c92; font-size: 14px; text-align: center; }
 .task-row.is-done { opacity: .58; }
 .task-row.is-done .task-title { text-decoration: line-through; }
@@ -77,4 +83,6 @@ footer { display: flex; justify-content: space-between; margin-top: 24px; color:
   .timeline-card { padding: 20px; }
   .task-row { gap: 11px; min-height: 72px; }
   .task-time { flex-basis: 72px; }
+  .header-actions { gap: 8px; }
+  .settings-actions { flex-direction: column; }
 }

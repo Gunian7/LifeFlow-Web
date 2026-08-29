@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { ExistingPlanBlock, PlannerTask, StoredTask, TaskDraft } from '../../../packages/core/src'
-import { createTask, editTask, replanToday, completeTask, uncompleteTask } from '../../../packages/core/src'
+import { buildExport, createTask, editTask, replanToday, completeTask, uncompleteTask } from '../../../packages/core/src'
 import './styles.css'
 
 type LocalTask = StoredTask
@@ -44,6 +44,7 @@ function App() {
   const [editPlace, setEditPlace] = useState('')
   const [editNotes, setEditNotes] = useState('')
   const [editError, setEditError] = useState('')
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks))
@@ -122,6 +123,24 @@ function App() {
     setEditingTask(null)
   }
 
+  function exportData() {
+    const blob = new Blob([buildExport(tasks)], { type: 'application/json' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `lifeflow-${new Date().toISOString().slice(0, 10)}.json`
+    link.click()
+    URL.revokeObjectURL(link.href)
+  }
+
+  function deleteAllData() {
+    if (!window.confirm('确定删除 LifeFlow 保存的全部本地数据吗？此操作不可撤销。')) return
+    localStorage.removeItem(STORAGE_KEY)
+    localStorage.removeItem(PLAN_KEY)
+    setTasks([])
+    setExistingBlocks([])
+    setSettingsOpen(false)
+  }
+
   return (
     <main className="shell">
       <header className="header">
@@ -130,9 +149,10 @@ function App() {
           <h1>今天，慢慢来。</h1>
           <p className="date">{today}</p>
         </div>
-        <button className="ghost-button" type="button" onClick={() => setShowAll((value) => !value)}>
-          {showAll ? '只看今天' : '全部任务'}
-        </button>
+        <div className="header-actions">
+          <button className="ghost-button" type="button" onClick={() => setShowAll((value) => !value)}>{showAll ? '只看今天' : '全部任务'}</button>
+          <button className="ghost-button" type="button" onClick={() => setSettingsOpen((value) => !value)}>设置</button>
+        </div>
       </header>
 
       <section className="focus-card" aria-label="当前进行">
@@ -182,6 +202,12 @@ function App() {
         <textarea value={editNotes} onChange={(event) => setEditNotes(event.target.value)} placeholder="描述" rows={3} />
         {editError && <p className="error-text">{editError}</p>}
         <button className="add-button save-edit" type="button" onClick={saveEdit}>保存修改</button>
+      </section>}
+
+      {settingsOpen && <section className="edit-card settings-card" aria-label="数据设置">
+        <div className="edit-heading"><p className="label">数据</p><button className="link-button" type="button" onClick={() => setSettingsOpen(false)}>收起</button></div>
+        <p className="settings-copy">任务只保存在这台设备的浏览器里。没有账号，也不会自动上传。</p>
+        <div className="settings-actions"><button className="secondary-button" type="button" onClick={exportData}>导出数据</button><button className="danger-button" type="button" onClick={deleteAllData}>删除全部数据</button></div>
       </section>}
 
       <section className="quiet-note"><span className="note-mark">✦</span><p>排不下的时候，我会告诉你原因。<br />不会偷偷吃掉你的休息。</p></section>

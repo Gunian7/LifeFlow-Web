@@ -156,6 +156,38 @@ export function completeTask(task: StoredTask, now: string): StoredTask { return
 export function uncompleteTask(task: StoredTask, now: string): StoredTask { return { ...task, status: 'inbox', done: false, completedAt: undefined, updatedAt: now } }
 export function deleteTask(tasks: StoredTask[], id: string): StoredTask[] { return tasks.filter(task => task.id !== id) }
 
+export interface ExportDocument {
+  version: 1
+  exportedAt: string
+  tasks: StoredTask[]
+}
+export interface ImportResult {
+  ok: boolean
+  tasks: StoredTask[]
+  error?: 'BAD_JSON' | 'UNSUPPORTED_VERSION' | 'INVALID_TASK_DATA'
+}
+
+export function buildExport(tasks: StoredTask[]): string {
+  const document: ExportDocument = { version: 1, exportedAt: new Date().toISOString(), tasks }
+  return JSON.stringify(document, null, 2)
+}
+
+export function parseImport(raw: string): ImportResult {
+  let parsed: unknown
+  try { parsed = JSON.parse(raw) } catch { return { ok: false, tasks: [], error: 'BAD_JSON' } }
+  if (!parsed || typeof parsed !== 'object') return { ok: false, tasks: [], error: 'BAD_JSON' }
+  const document = parsed as { version?: unknown; tasks?: unknown }
+  if (document.version !== 1) return { ok: false, tasks: [], error: 'UNSUPPORTED_VERSION' }
+  if (!Array.isArray(document.tasks)) return { ok: false, tasks: [], error: 'INVALID_TASK_DATA' }
+  for (const item of document.tasks) {
+    if (!item || typeof item !== 'object' || typeof (item as { id?: unknown }).id !== 'string' || typeof (item as { title?: unknown }).title !== 'string') {
+      return { ok: false, tasks: [], error: 'INVALID_TASK_DATA' }
+    }
+  }
+  return { ok: true, tasks: document.tasks as StoredTask[] }
+}
+
+
 type Slot = { start: number; end: number }
 const MINUTE = 60_000
 const DAY = 24 * 60 * MINUTE
