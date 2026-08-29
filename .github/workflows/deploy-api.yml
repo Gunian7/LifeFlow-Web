@@ -39,5 +39,7 @@ jobs:
         working-directory: apps/api
         run: npx wrangler deploy --config wrangler.toml
         env:
+          # Configure these two repository secrets before relying on this
+          # workflow. Local OAuth is intentionally not available in Actions.
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
