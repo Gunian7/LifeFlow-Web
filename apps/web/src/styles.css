@@ -24,7 +24,9 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; background: var(--bg); }
+html, body, #root { min-height: 100%; }
+html { background: var(--bg, #f5f3ee); }
+body { margin: 0; min-width: 320px; background: var(--bg, #f5f3ee); color: var(--text, #1c1c1a); transition: background-color 180ms ease-out, color 180ms ease-out; }
 body[data-theme='archive-terminal'] { background-color: var(--bg); background-image: radial-gradient(color-mix(in srgb, var(--text) 10%, transparent) .55px, transparent .55px), repeating-linear-gradient(135deg, transparent 0, transparent 38px, color-mix(in srgb, var(--secondary) 5%, transparent) 39px, transparent 40px); background-size: 5px 5px, 100% 100%; }
 body[data-theme='archive-terminal'] .shell { text-shadow: .15px .15px 0 color-mix(in srgb, var(--text) 12%, transparent); }
 body[data-theme='archive-terminal'] .header, body[data-theme='archive-terminal'] .timeline-area, body[data-theme='archive-terminal'] .sidebar, body[data-theme='archive-terminal'] .detail-panel { border-color: color-mix(in srgb, var(--accent) 55%, transparent); }

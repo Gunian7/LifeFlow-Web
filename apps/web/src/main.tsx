@@ -77,7 +77,25 @@ function App() {
   useEffect(() => {
     localStorage.setItem(THEME_KEY, themeId)
     const root = document.documentElement
-    for (const [key, value] of Object.entries(theme.tokens)) root.style.setProperty(`--${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`, String(value))
+    const tokenMap: Record<string, string> = {
+      '--bg': theme.tokens.background,
+      '--surface': theme.tokens.surface,
+      '--text': theme.tokens.text,
+      '--secondary': theme.tokens.secondary,
+      '--tertiary': theme.tokens.tertiary,
+      '--line': theme.tokens.line,
+      '--accent': theme.tokens.accent,
+      '--accent-soft': theme.tokens.accentSoft,
+      '--success': theme.tokens.success,
+      '--warning': theme.tokens.warning,
+      '--error': theme.tokens.error,
+      '--info': theme.tokens.info,
+      '--radius': theme.tokens.radius,
+      '--shadow': theme.tokens.shadow,
+      '--font': theme.tokens.font,
+      '--heading-weight': theme.tokens.headingWeight,
+    }
+    for (const [name, value] of Object.entries(tokenMap)) root.style.setProperty(name, value)
     document.body.dataset.theme = theme.id
   }, [themeId, theme])
 
