@@ -132,7 +132,11 @@ body[data-theme='archive-terminal'] .task-row.is-current { background: color-mix
 .settings-workspace { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 620px; border-bottom: 1px solid var(--line); }
 .settings-nav { padding: 28px 24px 0 0; border-right: 1px solid var(--line); }
 .settings-nav-title { margin: 0 0 16px; color: var(--tertiary); font: 11px monospace; letter-spacing: .12em; }
-.settings-nav-item { display: block; margin: 2px 0; border-left: 2px solid transparent; padding: 11px 12px; color: var(--secondary); font-size: 13px; }
+.settings-nav-item { display: flex; width: 100%; align-items: center; justify-content: space-between; margin: 2px 0; border: 1px solid transparent; border-left: 2px solid transparent; padding: 11px 12px; background: transparent; color: var(--secondary); font-size: 13px; text-align: left; cursor: pointer; }
+.settings-nav-item span { color: var(--tertiary); font-size: 18px; line-height: 1; opacity: 0; transform: translateX(-4px); transition: opacity 180ms ease-out, transform 180ms ease-out; }
+.settings-nav-item:hover { border-color: var(--line); color: var(--text); }
+.settings-nav-item:hover span, .settings-nav-item:focus-visible span { opacity: 1; transform: translateX(0); }
+.settings-nav-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .settings-nav-item.selected { border-left-color: var(--accent); background: var(--accent); color: var(--selection-text); }
 .settings-content { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; gap: 18px; padding: 28px 0 48px 36px; }
 .settings-section { min-width: 0; padding: 22px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); box-shadow: var(--shadow); }
@@ -169,7 +173,8 @@ footer { display: flex; justify-content: space-between; margin-top: 18px; color:
   .settings-workspace { display: block; min-height: 0; border-bottom: 0; }
   .settings-nav { display: flex; gap: 4px; overflow-x: auto; padding: 14px 0; border-right: 0; border-bottom: 1px solid var(--line); }
   .settings-nav-title { display: none; }
-  .settings-nav-item { flex: 0 0 auto; border-left: 0; border-bottom: 2px solid transparent; padding: 9px 11px; }
+  .settings-nav-item { width: auto; flex: 0 0 auto; border-left: 0; border-bottom: 2px solid transparent; padding: 9px 11px; }
+  .settings-nav-item span { display: none; }
   .settings-nav-item.selected { border-bottom-color: var(--accent); background: transparent; color: var(--text); }
   .settings-content { display: block; padding: 26px 0 40px; }
   .settings-section { margin-bottom: 14px; padding: 20px; }
