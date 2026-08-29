@@ -55,7 +55,12 @@ h2 { margin: 7px 0 0; font-size: 21px; font-weight: 600; letter-spacing: -.02em;
 .task-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 5px; }
 .task-title { font-size: 15px; }
 .task-row.is-current .task-title { font-weight: 600; }
-.task-place, .task-notes { overflow: hidden; color: var(--secondary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.task-notes { overflow: hidden; color: var(--tertiary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.special-row { display: grid; grid-template-columns: 84px 1fr auto; align-items: center; gap: 12px; min-height: 58px; border-bottom: 1px solid var(--line); color: var(--secondary); font-size: 13px; }
+.special-row small { color: var(--tertiary); font-size: 11px; }
+.special-time { color: var(--tertiary); font-variant-numeric: tabular-nums; }
+.special-row.rest { color: var(--secondary); }
+.special-row.buffer { color: var(--warning); }
 .task-notes { color: var(--tertiary); }
 .task-time { flex: 0 0 84px; text-align: right; }
 .task-time strong { display: block; color: var(--secondary); font-size: 15px; font-variant-numeric: tabular-nums; font-weight: 500; }

@@ -120,9 +120,38 @@ export interface ReplanInput extends PlannerInput {
   existingBlocks: ExistingPlanBlock[]
 }
 
+export interface TimelineTaskEntry extends PlanBlock { kind: 'task'; title?: string }
+export interface TimelineSpecialEntry { kind: 'rest' | 'buffer'; title: string; startAt: string; endAt: string }
+export type TimelineEntry = TimelineTaskEntry | TimelineSpecialEntry
 export interface ReplanResult extends PlannerResult {
   stalePlanBlocks: PlanBlock[]
   changes: PlanChange[]
+}
+
+export function buildTimelineEntries(blocks: PlanBlock[], settings: PlannerSettings): TimelineEntry[] {
+  const entries: TimelineEntry[] = blocks.map((block) => ({ ...block, kind: 'task' as const }))
+  const offset = offsetFor(settings.timezone)
+  const startMinutes = minutesOf(settings.availabilityStartLocalTime)
+  const endMinutes = minutesOf(settings.availabilityEndLocalTime)
+  if (Number.isNaN(offset) || startMinutes < 0 || endMinutes < 0 || startMinutes === endMinutes) return entries
+  let windowEnd = localMs(settings.planningDate, endMinutes, offset)
+  if (endMinutes < startMinutes) windowEnd += DAY
+  if (settings.rest.enabled) {
+    const restStart = minutesOf(settings.rest.startLocalTime)
+    const restEnd = minutesOf(settings.rest.endLocalTime)
+    if (restStart >= 0 && restEnd >= 0) {
+      let start = localMs(settings.planningDate, restStart, offset)
+      let end = localMs(settings.planningDate, restEnd, offset)
+      if (restStart < startMinutes) start += DAY
+      if (restEnd <= restStart) end += DAY
+      if (start < end) entries.push({ kind: 'rest', title: '休息', startAt: iso(start), endAt: iso(end) })
+    }
+  }
+  if (settings.dailyBufferMinutes > 0) {
+    const start = windowEnd - settings.dailyBufferMinutes * MINUTE
+    if (start < windowEnd) entries.push({ kind: 'buffer', title: '缓冲', startAt: iso(start), endAt: iso(windowEnd) })
+  }
+  return entries.sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt) || (a.title ?? '').localeCompare(b.title ?? ''))
 }
 
 function cleanOptional(value: string | undefined): string | undefined {

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { ExistingPlanBlock, PlannerTask, StoredTask, TaskDraft, RecurrenceRule, RecurringTemplate } from '../../../packages/core/src'
-import { buildExport, createTask, createTemplate, editTask, materializeOccurrences, mergeImportedTasks, parseImport, pinTask, replanToday, completeTask, uncompleteTask, unpinTask } from '../../../packages/core/src'
+import { buildExport, buildTimelineEntries, createTask, createTemplate, editTask, materializeOccurrences, mergeImportedTasks, parseImport, pinTask, replanToday, completeTask, uncompleteTask, unpinTask } from '../../../packages/core/src'
 import './styles.css'
 
 type LocalTask = StoredTask
@@ -104,6 +104,7 @@ function App() {
   const visibleTasks = showAll ? tasks : tasks.filter((task) => scheduledIds.has(task.id) || task.done)
   const selectedTask = tasks.find((task) => task.id === selectedTaskId)
   const selectedBlock = plan.planBlocks.find((block) => block.taskId === selectedTaskId)
+  const timelineEntries = buildTimelineEntries(plan.planBlocks, plannerInput.settings)
   const changeCount = plan.changes.length
 
   function addTask() {
@@ -257,20 +258,16 @@ function App() {
           <span className="muted">{changeCount ? `计划变了 ${changeCount} 处` : `${plan.planBlocks.length} 件已安排`}</span>
         </div>
         <div className="timeline">
-          {visibleTasks.length === 0 && <p className="empty">还没有安排。把想做的事写在下面。</p>}
-          {visibleTasks.map((task) => {
-            const block = plan.planBlocks.find((item) => item.taskId === task.id)
-            const start = block ? new Date(block.startAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '未安排'
-            return (
-              <div className={`task-row ${task.done ? 'is-done' : ''} ${selectedTaskId === task.id ? 'is-selected' : ''}`} key={task.id}>
-                <button className="task-main" type="button" onClick={() => { setSelectedTaskId(task.id); toggleTask(task.id) }}>
-                  <span className="task-check" aria-hidden="true">{task.done ? '✓' : ''}</span>
-                  <span className="task-copy"><span className="task-title">{task.title}</span><span className="task-place">{task.targetDurationMinutes ? `${task.targetDurationMinutes} 分钟` : '还没估时间'}{task.place ? ` · ${task.place}` : ''}</span>{task.notes && <span className="task-notes">{task.notes}</span>}</span>
-                </button>
-                <span className="task-time"><strong>{start}</strong><small>{task.done ? '已完成' : block ? '已安排' : '等着'}</small></span>
-                <button className="edit-button" type="button" onClick={() => openEditor(task)}>改</button>
-              </div>
-            )
+          {visibleTasks.length === 0 && <p className="empty">还没有安排。把现实中的事情写在下面。</p>}
+          {timelineEntries.map((entry) => {
+            if (entry.kind !== 'task') return <div className={`special-row ${entry.kind}`} key={`${entry.kind}-${entry.startAt}`}><span className="special-time">{new Date(entry.startAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span><span>{entry.title}</span><small>{entry.kind === 'buffer' ? '为变化留出空间' : '这段时间本身就是计划的一部分'}</small></div>
+            const task = tasks.find((candidate) => candidate.id === entry.taskId)
+            if (!task) return null
+            return <div className={`task-row ${task.done ? 'is-done' : ''} ${selectedTaskId === task.id ? 'is-selected' : ''}`} key={task.id}>
+              <button className="task-main" type="button" onClick={() => { setSelectedTaskId(task.id); toggleTask(task.id) }}><span className="task-check" aria-hidden="true">{task.done ? '✓' : ''}</span><span className="task-copy"><span className="task-title">{task.title}</span><span className="task-place">{task.targetDurationMinutes ? `${task.targetDurationMinutes} 分钟` : '还没估时间'}{task.place ? ` · ${task.place}` : ''}</span>{task.notes && <span className="task-notes">{task.notes}</span>}</span></button>
+              <span className="task-time"><strong>{new Date(entry.startAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</strong><small>{task.done ? '已完成' : entry.source === 'manualLock' ? '已锁定' : '已安排'}</small></span>
+              <button className="edit-button" type="button" onClick={() => openEditor(task)}>改</button>
+            </div>
           })}
           {showAll && plan.unscheduledTasks.length > 0 && <div className="deferred-list">
             <p className="label">今天没排进去</p>
