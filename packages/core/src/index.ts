@@ -7,6 +7,7 @@ export type ReasonCode =
   | 'ESTIMATE_REQUIRED' | 'FIXED_BLOCK_PROTECTED' | 'DEADLINE_TODAY'
   | 'DEADLINE_URGENT' | 'SPLIT_TO_FIT' | 'REST_PROTECTION'
   | 'PRESERVED_BUFFER' | 'CONFLICT_REQUIRES_DECISION'
+  | 'MANUALLY_LOCKED' | 'IN_PROGRESS_PROTECTED'
 
 export interface PlannerTask {
   id: string
@@ -49,7 +50,7 @@ export interface PlanBlock {
   taskId: string
   startAt: string
   endAt: string
-  source: 'automatic'
+  source: 'automatic' | 'manualLock'
   reasonCodes: ReasonCode[]
 }
 
@@ -64,6 +65,30 @@ export interface PlannerResult {
   planBlocks: PlanBlock[]
   unscheduledTasks: UnscheduledTask[]
   validationIssues: string[]
+}
+
+export interface ExistingPlanBlock {
+  taskId: string
+  startAt: string
+  endAt: string
+  source: 'automatic' | 'manualLock'
+}
+
+export type PlanChangeKind = 'ADDED' | 'MOVED' | 'REMOVED'
+export interface PlanChange {
+  taskId: string
+  kind: PlanChangeKind
+  previousStartAt?: string
+  newStartAt?: string
+}
+
+export interface ReplanInput extends PlannerInput {
+  existingBlocks: ExistingPlanBlock[]
+}
+
+export interface ReplanResult extends PlannerResult {
+  stalePlanBlocks: PlanBlock[]
+  changes: PlanChange[]
 }
 
 type Slot = { start: number; end: number }
@@ -197,4 +222,52 @@ export function planToday(input: PlannerInput): PlannerResult {
   const mustFailure = unscheduledTasks.some(item => input.tasks.find(task => task.id === item.taskId)?.importance === 'must')
   const importantFailure = unscheduledTasks.some(item => input.tasks.find(task => task.id === item.taskId)?.importance === 'important')
   return { feasibility: mustFailure ? 'infeasible' : importantFailure ? 'feasibleWithTradeoffs' : 'feasible', planBlocks, unscheduledTasks, validationIssues: [] }
+}
+
+export function replanToday(input: ReplanInput): ReplanResult {
+  const now = Date.parse(input.now)
+  const protectedIds = new Set<string>()
+  const stalePlanBlocks: PlanBlock[] = []
+  const protectedFixed: PlannerFixedBlock[] = []
+
+  for (const old of input.existingBlocks) {
+    const task = input.tasks.find(candidate => candidate.id === old.taskId)
+    if (!task || ['completed', 'cancelled', 'skipped'].includes(task.status)) continue
+    const start = Date.parse(old.startAt)
+    const end = Date.parse(old.endAt)
+    if (old.source === 'manualLock' || (start <= now && now < end)) {
+      protectedIds.add(old.taskId)
+      protectedFixed.push({ id: `protected-${old.taskId}`, title: old.taskId, startAt: old.startAt, endAt: old.endAt, strength: 'hard', movable: false })
+    } else if (end <= now) {
+      protectedIds.add(old.taskId)
+      stalePlanBlocks.push({ taskId: old.taskId, startAt: old.startAt, endAt: old.endAt, source: 'automatic', reasonCodes: [] })
+    }
+  }
+
+  const planned = planToday({
+    now: input.now,
+    settings: input.settings,
+    tasks: input.tasks.filter(task => !protectedIds.has(task.id)),
+    fixedBlocks: [...input.fixedBlocks, ...protectedFixed],
+  })
+  const planBlocks = [...planned.planBlocks]
+  for (const old of input.existingBlocks) {
+    if (!protectedIds.has(old.taskId) || stalePlanBlocks.some(block => block.taskId === old.taskId)) continue
+    planBlocks.push({ taskId: old.taskId, startAt: old.startAt, endAt: old.endAt, source: old.source, reasonCodes: old.source === 'manualLock' ? ['MANUALLY_LOCKED'] : ['IN_PROGRESS_PROTECTED'] })
+  }
+  planBlocks.sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt) || a.taskId.localeCompare(b.taskId))
+
+  const changes: PlanChange[] = []
+  const currentIds = new Set(planBlocks.map(block => block.taskId))
+  for (const block of planBlocks) {
+    if (protectedIds.has(block.taskId)) continue
+    const old = input.existingBlocks.find(candidate => candidate.taskId === block.taskId)
+    if (!old) changes.push({ taskId: block.taskId, kind: 'ADDED', newStartAt: block.startAt })
+    else if (old.startAt !== block.startAt || old.endAt !== block.endAt) changes.push({ taskId: block.taskId, kind: 'MOVED', previousStartAt: old.startAt, newStartAt: block.startAt })
+  }
+  for (const old of input.existingBlocks) {
+    if (!protectedIds.has(old.taskId) && !currentIds.has(old.taskId)) changes.push({ taskId: old.taskId, kind: 'REMOVED', previousStartAt: old.startAt })
+  }
+  changes.sort((a, b) => a.taskId.localeCompare(b.taskId))
+  return { ...planned, planBlocks, stalePlanBlocks, changes }
 }

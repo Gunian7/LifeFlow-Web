@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import type { PlannerTask } from '../../../packages/core/src'
-import { planToday } from '../../../packages/core/src'
+import type { ExistingPlanBlock, PlannerTask } from '../../../packages/core/src'
+import { replanToday } from '../../../packages/core/src'
 import './styles.css'
 
 type LocalTask = PlannerTask & { done: boolean; place?: string }
 const STORAGE_KEY = 'lifeflow-web-tasks-v1'
+const PLAN_KEY = 'lifeflow-web-plan-v1'
 const today = new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }).format(new Date())
 
 const initialTasks: LocalTask[] = [
@@ -21,8 +22,18 @@ function loadTasks(): LocalTask[] {
   }
 }
 
+function loadPlan(): ExistingPlanBlock[] {
+  try {
+    const raw = localStorage.getItem(PLAN_KEY)
+    return raw ? JSON.parse(raw) as ExistingPlanBlock[] : []
+  } catch {
+    return []
+  }
+}
+
 function App() {
   const [tasks, setTasks] = useState<LocalTask[]>(loadTasks)
+  const [existingBlocks, setExistingBlocks] = useState<ExistingPlanBlock[]>(loadPlan)
   const [title, setTitle] = useState('')
   const [minutes, setMinutes] = useState('30')
   const [showAll, setShowAll] = useState(false)
@@ -41,9 +52,15 @@ function App() {
     tasks: tasks.filter((task) => !task.done), fixedBlocks: [],
   }), [tasks])
 
-  const plan = useMemo(() => planToday(plannerInput), [plannerInput])
+  const plan = useMemo(() => replanToday({ ...plannerInput, existingBlocks }), [plannerInput, existingBlocks])
+  useEffect(() => {
+    const snapshot = plan.planBlocks.map(({ taskId, startAt, endAt, source }) => ({ taskId, startAt, endAt, source }))
+    localStorage.setItem(PLAN_KEY, JSON.stringify(snapshot))
+    setExistingBlocks((previous) => JSON.stringify(previous) === JSON.stringify(snapshot) ? previous : snapshot)
+  }, [plan.planBlocks])
   const scheduledIds = new Set(plan.planBlocks.map((block) => block.taskId))
   const visibleTasks = showAll ? tasks : tasks.filter((task) => scheduledIds.has(task.id) || task.done)
+  const changeCount = plan.changes.length
 
   function addTask() {
     const cleanTitle = title.trim()
@@ -90,7 +107,7 @@ function App() {
       <section className="timeline-card" aria-label="今日时间线">
         <div className="section-heading">
           <div><p className="label">今日时间线</p><h2>{showAll ? '全部任务' : '接下来'}</h2></div>
-          <span className="muted">{plan.planBlocks.length} 件已安排</span>
+          <span className="muted">{changeCount ? `计划变了 ${changeCount} 处` : `${plan.planBlocks.length} 件已安排`}</span>
         </div>
         <div className="timeline">
           {visibleTasks.length === 0 && <p className="empty">还没有安排。把想做的事写在下面。</p>}
