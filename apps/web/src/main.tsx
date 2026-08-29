@@ -309,6 +309,24 @@ function App() {
     setTemplates((current) => current.map((item) => item.id === task.templateId ? { ...item, paused: true } : item))
   }
 
+  if (settingsOpen) return (
+    <main className="shell settings-page">
+      <header className="header">
+        <div><p className="eyebrow">LIFEFLOW / SYSTEM</p><h1>设置</h1><p className="date">调整 LifeFlow 的工作方式</p></div>
+        <button className="ghost-button back-plan" type="button" onClick={() => setSettingsOpen(false)}>返回计划</button>
+      </header>
+      <section className="settings-workspace" aria-label="设置工作区">
+        <nav className="settings-nav" aria-label="设置分类"><p className="settings-nav-title">SYSTEM</p><span className="settings-nav-item selected">外观</span><span className="settings-nav-item">数据</span><span className="settings-nav-item">AI 与服务</span><span className="settings-nav-item">关于 LifeFlow</span></nav>
+        <div className="settings-content">
+          <section className="settings-section"><p className="label">APPEARANCE / 外观</p><h2>视觉皮肤</h2><p className="settings-copy">皮肤只改变表现方式，不改变任务、计划规则或数据归属。</p><div className="theme-picker">{themeIds.map((id) => { const option = getTheme(id); return <button className={`theme-option ${themeId === id ? 'selected' : ''}`} type="button" key={id} onClick={() => setThemeId(id)}><span className="theme-swatch" style={{ background: option.tokens.background, borderColor: option.tokens.accent }} /><span><strong>{option.name}</strong><small>{option.description}</small></span></button> })}</div></section>
+          <section className="settings-section"><p className="label">DATA / 数据</p><h2>本地数据</h2><p className="settings-copy">任务保存在这台设备的浏览器里。没有账号，也不会自动上传。导入时，相同任务会保留更新时间较新的一份。</p><input ref={importInputRef} className="file-input" type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) importData(file); event.currentTarget.value = '' }} /><div className="settings-actions"><button className="secondary-button" type="button" onClick={exportData}>导出数据</button><button className="secondary-button" type="button" onClick={() => importInputRef.current?.click()}>导入数据</button><button className="danger-button" type="button" onClick={deleteAllData}>删除全部数据</button></div>{importNotice && <p className="import-notice">{importNotice}</p>}</section>
+          <section className="settings-section settings-placeholder"><p className="label">AI / AI 与服务</p><h2>AI 顾问</h2><p className="settings-copy">AI 建议会在你明确请求时使用。它只能提供顺序建议，不能替代本地 Planner，也不会自动修改你的计划。</p><span className="muted">后端连接状态将在这里显示</span></section>
+          <section className="settings-section settings-placeholder"><p className="label">ABOUT / 关于</p><h2>LifeFlow</h2><p className="settings-copy">一个帮助你重新进入生活的现实型时间规划工具。</p><span className="muted">本地优先 · 无需登录 · 计划可解释</span></section>
+        </div>
+      </section>
+    </main>
+  )
+
   return (
     <main className="shell">
       <header className="header">

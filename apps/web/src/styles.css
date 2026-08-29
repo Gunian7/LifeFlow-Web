@@ -128,6 +128,16 @@ body[data-theme='archive-terminal'] .task-row.is-current { background: color-mix
 .save-edit { width: 100%; min-height: 42px; margin-top: 10px; }
 .error-text { margin: 5px 0; color: var(--error); font-size: 12px; }
 .settings-copy { margin: 12px 0 18px; color: var(--secondary); font-size: 13px; line-height: 1.7; }
+.settings-page { min-height: 100vh; }
+.settings-workspace { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 620px; border-bottom: 1px solid var(--line); }
+.settings-nav { padding: 28px 24px 0 0; border-right: 1px solid var(--line); }
+.settings-nav-title { margin: 0 0 16px; color: var(--tertiary); font: 11px monospace; letter-spacing: .12em; }
+.settings-nav-item { display: block; margin: 2px 0; border-left: 2px solid transparent; padding: 11px 12px; color: var(--secondary); font-size: 13px; }
+.settings-nav-item.selected { border-left-color: var(--accent); background: var(--accent); color: var(--selection-text); }
+.settings-content { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; gap: 0 36px; padding: 28px 0 48px 36px; }
+.settings-section { min-width: 0; padding: 0 0 32px; border-bottom: 1px solid var(--line); }
+.settings-section h2 { margin-bottom: 10px; }
+.settings-placeholder { padding-top: 28px; }
 .theme-picker { margin: 18px 0; }
 .theme-picker > .label { margin-bottom: 8px; }
 .theme-option { display: flex; width: 100%; align-items: center; gap: 10px; margin-bottom: 6px; border: 1px solid transparent; border-radius: var(--radius); padding: 8px; background: transparent; color: var(--text); text-align: left; }
@@ -156,6 +166,13 @@ footer { display: flex; justify-content: space-between; margin-top: 18px; color:
   .header-actions { gap: 12px; }
   .theme-control span { display: none; }
   .workspace { display: block; min-height: 0; }
+  .settings-workspace { display: block; min-height: 0; border-bottom: 0; }
+  .settings-nav { display: flex; gap: 4px; overflow-x: auto; padding: 14px 0; border-right: 0; border-bottom: 1px solid var(--line); }
+  .settings-nav-title { display: none; }
+  .settings-nav-item { flex: 0 0 auto; border-left: 0; border-bottom: 2px solid transparent; padding: 9px 11px; }
+  .settings-nav-item.selected { border-bottom-color: var(--accent); background: transparent; color: var(--text); }
+  .settings-content { display: block; padding: 26px 0 40px; }
+  .settings-section { padding-bottom: 26px; }
   .sidebar { display: flex; gap: 22px; overflow-x: auto; padding: 18px 0 12px; border-right: 0; border-bottom: 1px solid var(--line); }
   .side-block { min-width: 130px; padding-bottom: 0; }
   .timeline-area { padding: 24px 0 0; }
