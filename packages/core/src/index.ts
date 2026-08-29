@@ -1,3 +1,6 @@
+export { themes, themeIds, defaultTheme, getTheme } from './theme'
+export type { ThemeId, ThemeDefinition, ThemeTokens } from './theme'
+
 export type Importance = 'must' | 'important' | 'want'
 export type TaskStatus = 'inbox' | 'planned' | 'inProgress' | 'completed' | 'skipped' | 'deferred' | 'cancelled'
 export type ConstraintStrength = 'hard' | 'semiHard' | 'soft'

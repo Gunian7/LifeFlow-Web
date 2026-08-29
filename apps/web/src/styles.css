@@ -105,6 +105,14 @@ h2 { margin: 7px 0 0; font-size: 21px; font-weight: 600; letter-spacing: -.02em;
 .save-edit { width: 100%; min-height: 42px; margin-top: 10px; }
 .error-text { margin: 5px 0; color: var(--error); font-size: 12px; }
 .settings-copy { margin: 12px 0 18px; color: var(--secondary); font-size: 13px; line-height: 1.7; }
+.theme-picker { margin: 18px 0; }
+.theme-picker > .label { margin-bottom: 8px; }
+.theme-option { display: flex; width: 100%; align-items: center; gap: 10px; margin-bottom: 6px; border: 1px solid transparent; border-radius: var(--radius); padding: 8px; background: transparent; color: var(--text); text-align: left; }
+.theme-option:hover, .theme-option.selected { border-color: var(--accent); background: var(--accent-soft); }
+.theme-swatch { width: 26px; height: 26px; flex: 0 0 auto; border: 2px solid; border-radius: 50%; }
+.theme-option strong, .theme-option small { display: block; }
+.theme-option strong { font-size: 13px; font-weight: 500; }
+.theme-option small { margin-top: 2px; color: var(--secondary); font-size: 11px; }
 .settings-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .file-input { display: none; }
 .import-notice { margin: 12px 0 0; color: var(--secondary); font-size: 13px; line-height: 1.6; }

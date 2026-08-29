@@ -16,6 +16,18 @@ Warm System · Calm · Human · Systematic · Editorial · Quietly Intelligent �
 
 禁止：Cyberpunk、霓虹、玻璃拟态、紫色 AI 渐变、大面积渐变、过度圆角、阴影卡片墙、游戏 HUD、拟物、效率压迫、Gamification、数据炫技。
 
+## 皮肤系统
+
+LifeFlow 支持多套视觉皮肤。皮肤只改变表现层，不改变任务、Planner、Replan、重复规则、数据所有权或 AI 边界。
+
+当前皮肤：
+
+- **Warm System**：默认皮肤。暖白、结构线、克制橙色，表达温暖与精确的平衡。
+- **Quiet Dark**：深炭灰、低刺激暖白和低饱和状态色，适合夜间使用。
+- **Paper Editorial**：纸张色、编辑排版感、极少圆角，强调个人工作台气质。
+
+皮肤选择保存在本地设备。未知或损坏的皮肤值必须安全回退到 Warm System。新增皮肤必须保持相同的语义色角色：当前任务、主要行动、成功、警告、错误和信息，不得仅按装饰颜色自由扩展。
+
 ## 色彩
 
 ```text

@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import type { ExistingPlanBlock, PlannerTask, StoredTask, TaskDraft, RecurrenceRule, RecurringTemplate } from '../../../packages/core/src'
-import { buildExport, buildTimelineEntries, createTask, createTemplate, editTask, materializeOccurrences, mergeImportedTasks, parseImport, pinTask, replanToday, completeTask, uncompleteTask, unpinTask } from '../../../packages/core/src'
+import type { ExistingPlanBlock, PlannerTask, StoredTask, TaskDraft, RecurrenceRule, RecurringTemplate, ThemeId } from '../../../packages/core/src'
+import { buildExport, buildTimelineEntries, createTask, createTemplate, editTask, getTheme, materializeOccurrences, mergeImportedTasks, parseImport, pinTask, replanToday, completeTask, uncompleteTask, unpinTask, themeIds } from '../../../packages/core/src'
 import './styles.css'
 
 type LocalTask = StoredTask
 const STORAGE_KEY = 'lifeflow-web-tasks-v1'
 const PLAN_KEY = 'lifeflow-web-plan-v1'
 const TEMPLATE_KEY = 'lifeflow-web-templates-v1'
+const THEME_KEY = 'lifeflow-web-theme-v1'
 const today = new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }).format(new Date())
 
 const initialNow = new Date().toISOString()
@@ -64,12 +65,21 @@ function App() {
   const [editNotes, setEditNotes] = useState('')
   const [editError, setEditError] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [themeId, setThemeId] = useState<ThemeId>(() => getTheme(localStorage.getItem(THEME_KEY) ?? undefined).id)
+  const theme = getTheme(themeId)
   const [importNotice, setImportNotice] = useState('')
   const importInputRef = useRef<HTMLInputElement | null>(null)
   const [repeatRule, setRepeatRule] = useState<RecurrenceRule | null>(null)
   const [repeatDays, setRepeatDays] = useState<number[]>([])
   const [pinTime, setPinTime] = useState('')
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+
+  useEffect(() => {
+    localStorage.setItem(THEME_KEY, themeId)
+    const root = document.documentElement
+    for (const [key, value] of Object.entries(theme.tokens)) root.style.setProperty(`--${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`, String(value))
+    document.body.dataset.theme = theme.id
+  }, [themeId, theme])
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks))
@@ -307,6 +317,7 @@ function App() {
       {settingsOpen && <section className="edit-card settings-card" aria-label="数据设置">
         <div className="edit-heading"><p className="label">数据</p><button className="link-button" type="button" onClick={() => setSettingsOpen(false)}>收起</button></div>
         <p className="settings-copy">任务只保存在这台设备的浏览器里。没有账号，也不会自动上传。导入时，相同任务会保留更新时间较新的一份。</p>
+        <div className="theme-picker"><p className="label">视觉皮肤</p>{themeIds.map((id) => { const option = getTheme(id); return <button className={`theme-option ${themeId === id ? 'selected' : ''}`} type="button" key={id} onClick={() => setThemeId(id)}><span className="theme-swatch" style={{ background: option.tokens.background, borderColor: option.tokens.accent }} /><span><strong>{option.name}</strong><small>{option.description}</small></span></button> })}</div>
         <input ref={importInputRef} className="file-input" type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) importData(file); event.currentTarget.value = '' }} />
         <div className="settings-actions"><button className="secondary-button" type="button" onClick={exportData}>导出数据</button><button className="secondary-button" type="button" onClick={() => importInputRef.current?.click()}>导入数据</button><button className="danger-button" type="button" onClick={deleteAllData}>删除全部数据</button></div>
         {importNotice && <p className="import-notice">{importNotice}</p>}
