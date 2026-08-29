@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { ExistingPlanBlock, PlannerTask, StoredTask, TaskDraft, RecurrenceRule, RecurringTemplate, ThemeId } from '../../../packages/core/src'
 import { buildExport, buildTimelineEntries, createTask, createTemplate, editTask, getTheme, materializeOccurrences, mergeImportedTasks, parseImport, pinTask, replanToday, completeTask, uncompleteTask, unpinTask, themeIds } from '../../../packages/core/src'
+import type { FocusSession } from '../../../packages/core/src/focus'
+import { focusRemainingSeconds, pauseFocus, resumeFocus, startFocus, stopFocus } from '../../../packages/core/src/focus'
 import './styles.css'
 
 type LocalTask = StoredTask
@@ -10,6 +12,7 @@ const PLAN_KEY = 'lifeflow-web-plan-v1'
 const TEMPLATE_KEY = 'lifeflow-web-templates-v1'
 const THEME_KEY = 'lifeflow-web-theme-v1'
 const API_URL = 'https://lifeflow-api.mosesbeck761988kdl.workers.dev'
+const FOCUS_KEY = 'lifeflow-web-focus-v1'
 const today = new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }).format(new Date())
 
 const initialNow = new Date().toISOString()
@@ -52,6 +55,10 @@ function reasonText(codes: string[]): string {
   return '今天时间不够'
 }
 
+function loadFocus(): FocusSession | null {
+  try { const raw = localStorage.getItem(FOCUS_KEY); return raw ? JSON.parse(raw) as FocusSession : null } catch { return null }
+}
+
 function App() {
   const [tasks, setTasks] = useState<LocalTask[]>(loadTasks)
   const [existingBlocks, setExistingBlocks] = useState<ExistingPlanBlock[]>(loadPlan)
@@ -74,6 +81,8 @@ function App() {
   const [repeatDays, setRepeatDays] = useState<number[]>([])
   const [pinTime, setPinTime] = useState('')
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+  const [focusSession, setFocusSession] = useState<FocusSession | null>(loadFocus)
+  const [focusTick, setFocusTick] = useState(0)
   const [aiState, setAiState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [aiReason, setAiReason] = useState('')
   const [aiOrder, setAiOrder] = useState<string[]>([])
@@ -102,6 +111,13 @@ function App() {
     for (const [name, value] of Object.entries(tokenMap)) root.style.setProperty(name, value)
     document.body.dataset.theme = theme.id
   }, [themeId, theme])
+
+  useEffect(() => {
+    if (!focusSession) { localStorage.removeItem(FOCUS_KEY); return }
+    localStorage.setItem(FOCUS_KEY, JSON.stringify(focusSession))
+    const timer = window.setInterval(() => setFocusTick((tick) => tick + 1), 1000)
+    return () => window.clearInterval(timer)
+  }, [focusSession])
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks))
@@ -201,6 +217,23 @@ function App() {
     }
     setTasks((current) => current.map((task) => task.id === editingTask.id ? saved : task))
     setEditingTask(null)
+  }
+
+  function startFocusFor(task: LocalTask) {
+    if (!task.targetDurationMinutes) return
+    setSelectedTaskId(task.id)
+    setFocusSession(startFocus(task.id, task.targetDurationMinutes, new Date().toISOString()))
+  }
+
+  function toggleFocus() {
+    if (!focusSession) return
+    const now = new Date().toISOString()
+    setFocusSession(focusSession.state === 'running' ? pauseFocus(focusSession, now) : resumeFocus(focusSession, now))
+  }
+
+  function endFocus() {
+    if (!focusSession) return
+    setFocusSession(null)
   }
 
   async function askAiOrder() {
@@ -374,6 +407,7 @@ function App() {
             <p className="label">为什么在这里</p>
             <ul className="detail-list"><li>{selectedTask.importance === 'must' ? '你标记了今天需要完成' : '按当前可用时间安排'}</li><li>{selectedTask.targetDurationMinutes ? `预计需要 ${selectedTask.targetDurationMinutes} 分钟` : '需要先补充预计时间'}</li>{selectedBlock?.source === 'manualLock' && <li>这是你手动锁定的时间</li>}</ul>
             <button className="edit-button" type="button" onClick={() => openEditor(selectedTask)}>编辑这件事</button>
+            <div className="focus-panel"><p className="label">专注</p>{focusSession?.taskId === selectedTask.id ? <><p className="focus-timer">{Math.floor(focusRemainingSeconds(focusSession, new Date().toISOString()) / 60).toString().padStart(2, '0')}:{(focusRemainingSeconds(focusSession, new Date().toISOString()) % 60).toString().padStart(2, '0')}</p><button className="secondary-button" type="button" onClick={toggleFocus}>{focusSession.state === 'running' ? '暂停' : '继续'}</button><button className="link-button" type="button" onClick={endFocus}>结束专注</button></> : <button className="secondary-button" type="button" onClick={() => startFocusFor(selectedTask)}>开始专注</button>}</div>
             <div className="ai-advice"><p className="label">AI 建议 · 可选</p>{aiState === 'idle' && <button className="secondary-button" type="button" onClick={askAiOrder}>查看建议顺序</button>}{aiState === 'loading' && <p className="detail-empty">正在整理顺序……</p>}{aiState === 'error' && <p className="error-text">{aiReason}</p>}{aiState === 'ready' && <><p className="detail-empty">{aiReason}</p><p className="ai-order">{aiOrder.map((id) => tasks.find((task) => task.id === id)?.title).filter(Boolean).join(' → ')}</p><small>这只是建议，不会自动改变时间线。</small></>}</div>
           </> : <p className="detail-empty">选择一件事，查看它为什么出现在这里。</p>}
         </aside>

@@ -104,6 +104,8 @@ body[data-theme='archive-terminal'] .task-row.is-current { background: color-mix
 .detail-rule { height: 1px; margin: 20px 0; background: var(--line); }
 .detail-list { margin: 0; padding-left: 16px; color: var(--secondary); font-size: 13px; line-height: 2; }
 .detail-empty { color: var(--secondary); font-size: 13px; line-height: 1.8; }
+.focus-panel { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); }
+.focus-timer { margin: 9px 0; color: var(--accent); font: 24px/1 monospace; font-variant-numeric: tabular-nums; }
 .ai-advice { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); }
 .ai-advice .secondary-button { margin-top: 10px; }
 .ai-order { margin: 12px 0 6px; color: var(--accent); font-size: 13px; line-height: 1.8; }
