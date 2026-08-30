@@ -70,6 +70,15 @@ function localDate(iso: string): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
+function pad2(value: number): string { return String(value).padStart(2, '0') }
+
+// ISO instant -> value for <input type="datetime-local"> in the local zone.
+function toLocalInput(iso?: string): string {
+  if (!iso) return ''
+  const date = new Date(iso)
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}T${pad2(date.getHours())}:${pad2(date.getMinutes())}`
+}
+
 interface BackgroundConfig { dataUrl: string; blur: number; dim: number; saturate: number }
 const DEFAULT_BG: BackgroundConfig = { dataUrl: '', blur: 6, dim: 40, saturate: 100 }
 
@@ -232,6 +241,8 @@ function App() {
   const [plannerConfig, setPlannerConfig] = useState<PlannerConfig>(loadPlannerConfig)
   const [preferredOrder, setPreferredOrder] = useState<string[] | null>(null)
   const [editImportance, setEditImportance] = useState<Importance>('important')
+  const [editSplittable, setEditSplittable] = useState(false)
+  const [editDeadline, setEditDeadline] = useState('')
   const [voiceSupported] = useState(speechSupported)
   const voiceBaseRef = useRef('')
   const handleVoiceText = useCallback((chunk: string, finalText: string) => {
@@ -247,6 +258,8 @@ function App() {
 
   const [createOpen, setCreateOpen] = useState(false)
   const [createImportance, setCreateImportance] = useState<Importance>('important')
+  const [createSplittable, setCreateSplittable] = useState(false)
+  const [createDeadline, setCreateDeadline] = useState('')
   const [createPlace, setCreatePlace] = useState('')
   const [createNotes, setCreateNotes] = useState('')
   const [createPinTime, setCreatePinTime] = useState('')
@@ -273,7 +286,8 @@ function App() {
     const draft: TaskDraft = {
       title: cleanTitle,
       importance: createImportance,
-      splittable: false,
+      splittable: createSplittable,
+      deadlineAt: createDeadline ? new Date(createDeadline).toISOString() : undefined,
       place: createPlace || undefined,
       notes: createNotes || undefined,
       targetDurationMinutes: Number.isInteger(parsed) && parsed > 0 ? parsed : undefined,
@@ -384,6 +398,7 @@ function App() {
   const selectedTask = tasks.find((task) => task.id === selectedTaskId)
   const selectedBlock = plan.planBlocks.find((block) => block.taskId === selectedTaskId)
   const editingTemplate = editingTask?.templateId ? templates.find((item) => item.id === editingTask.templateId) : undefined
+  const editingLive = editingTask ? (tasks.find((task) => task.id === editingTask.id) ?? editingTask) : null
   const timelineEntries = buildTimelineEntries(plan.planBlocks, plannerInput.settings)
   const changeCount = plan.changes.length
   const todayStr = localDate(now)
@@ -438,6 +453,8 @@ function App() {
     setEditNotes(task.notes ?? '')
     setEditError('')
     setEditImportance(task.importance)
+    setEditSplittable(task.splittable)
+    setEditDeadline(toLocalInput(task.deadlineAt))
     setPinTime(task.lockedStartAt ? new Date(task.lockedStartAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '')
     setRepeatRule(null)
     setRepeatDays([])
@@ -450,7 +467,8 @@ function App() {
     const draft: TaskDraft = {
       title: editTitle,
       importance: editImportance,
-      splittable: editingTask.splittable,
+      splittable: editSplittable,
+      deadlineAt: editDeadline ? new Date(editDeadline).toISOString() : undefined,
       place: editPlace,
       notes: editNotes,
       targetDurationMinutes: rawMinutes ? parsed : undefined,
@@ -775,10 +793,10 @@ function App() {
               const decidable = item.reasonCodes.includes('PRESERVED_BUFFER') || item.reasonCodes.includes('REST_PROTECTION') || item.reasonCodes.includes('INSUFFICIENT_TIME')
               return task && <div className="deferred-row decision-row" key={item.taskId}>
                 <span>{task.title}</span>
-                {decidable ? <span className="decision-actions"><small>{reasonText(item.reasonCodes)}</small><button className="link-button" type="button" onClick={() => setTaskFlag(item.taskId, { forceToday: true })}>放在今天</button><button className="link-button" type="button" onClick={() => setTaskFlag(item.taskId, { deferredUntil: tomorrowStr })}>放到明天</button><button className="link-button" type="button" onClick={() => { setSettingsSection('planning'); setSettingsOpen(true) }}>调整时段</button></span> : <small>{reasonText(item.reasonCodes)}</small>}
+                {decidable ? <span className="decision-actions"><small>{reasonText(item.reasonCodes)}</small><button className="link-button" type="button" onClick={() => openEditor(task)}>改</button><button className="link-button" type="button" onClick={() => setTaskFlag(item.taskId, { forceToday: true })}>放在今天</button><button className="link-button" type="button" onClick={() => setTaskFlag(item.taskId, { deferredUntil: tomorrowStr })}>放到明天</button><button className="link-button" type="button" onClick={() => { setSettingsSection('planning'); setSettingsOpen(true) }}>调整时段</button></span> : <small>{reasonText(item.reasonCodes)}</small>}
               </div>
             })}
-            {tomorrowTasks.length > 0 && <div className="tomorrow-group"><p className="label">明天见</p>{tomorrowTasks.map((task) => <div className="deferred-row" key={task.id}><span>{task.title}</span><small>明天自动排入</small></div>)}</div>}
+            {tomorrowTasks.length > 0 && <div className="tomorrow-group"><p className="label">明天见</p>{tomorrowTasks.map((task) => <div className="deferred-row" key={task.id}><span>{task.title}</span><span className="decision-actions"><small>明天自动排入</small><button className="link-button" type="button" onClick={() => setTaskFlag(task.id, { deferredUntil: undefined })}>留在今天</button></span></div>)}</div>}
           </div>}
         </div>
       </section>
@@ -795,6 +813,8 @@ function App() {
       {createOpen && <section className="edit-card create-card" aria-label="新任务详细设置">
         <div className="edit-heading"><p className="label">新任务 · 详细设置</p><button className="link-button" type="button" onClick={resetCreate}>收起</button></div>
         <div className="repeat-panel"><span className="edit-hint">重要性</span>{([['must', '必须做'], ['important', '重要'], ['want', '想做']] as Array<[Importance, string]>).map(([value, label]) => <button className={createImportance === value ? 'choice active' : 'choice'} type="button" key={value} onClick={() => setCreateImportance(value)}>{label}</button>)}</div>
+        <div className="repeat-panel"><span className="edit-hint">拆分</span><button className={createSplittable ? 'choice active' : 'choice'} type="button" onClick={() => setCreateSplittable((value) => !value)}>{createSplittable ? '可以切小块' : '不切分'}</button><span className="edit-hint">超过 50 分钟的长任务自动按 25 分钟切块</span></div>
+        <div className="edit-grid"><input type="datetime-local" value={createDeadline} onChange={(event) => setCreateDeadline(event.target.value)} aria-label="截止时间" /><span className="edit-hint">截止时间，可选</span></div>
         <div className="edit-grid"><input value={createPlace} onChange={(event) => setCreatePlace(event.target.value)} placeholder="在哪里" aria-label="在哪里" /><input type="time" value={createPinTime} onChange={(event) => setCreatePinTime(event.target.value)} aria-label="钉在几点" /></div>
         <span className="edit-hint pin-hint">钉在几点，留空表示自动安排</span>
         <textarea value={createNotes} onChange={(event) => setCreateNotes(event.target.value)} placeholder="描述" rows={2} aria-label="描述" />
@@ -814,6 +834,8 @@ function App() {
         <div className="edit-grid"><input value={editMinutes} onChange={(event) => setEditMinutes(event.target.value)} placeholder="分钟" inputMode="numeric" /><input value={editPlace} onChange={(event) => setEditPlace(event.target.value)} placeholder="在哪里" /></div>
         <textarea value={editNotes} onChange={(event) => setEditNotes(event.target.value)} placeholder="描述" rows={3} />
         <div className="repeat-panel"><span className="edit-hint">重要性</span>{([['must', '必须做'], ['important', '重要'], ['want', '想做']] as Array<[Importance, string]>).map(([value, label]) => <button className={editImportance === value ? 'choice active' : 'choice'} type="button" key={value} onClick={() => setEditImportance(value)}>{label}</button>)}</div>
+        <div className="repeat-panel"><span className="edit-hint">拆分</span><button className={editSplittable ? 'choice active' : 'choice'} type="button" onClick={() => setEditSplittable((value) => !value)}>{editSplittable ? '可以切小块' : '不切分'}</button><span className="edit-hint">超过 50 分钟的长任务自动按 25 分钟切块</span></div>
+        <div className="edit-grid"><input type="datetime-local" value={editDeadline} onChange={(event) => setEditDeadline(event.target.value)} aria-label="截止时间" /><span className="edit-hint">截止时间，可选</span></div>
         <div className="edit-grid"><input type="time" value={pinTime} onChange={(event) => setPinTime(event.target.value)} /><span className="edit-hint">留空表示自动安排</span></div>
         <div className="repeat-panel">
           <span className="edit-hint">重复</span>
@@ -825,6 +847,10 @@ function App() {
           {editingTask.templateId && editingTemplate?.paused && <button className="link-button" type="button" onClick={() => resumeRepeat(editingTask)}>恢复重复</button>}
           {editingTask.templateId && <button className="link-button" type="button" onClick={() => deleteRepeat(editingTask)}>不再重复</button>}
         </div>
+        {(editingLive?.deferredUntil || editingLive?.forceToday) && <div className="repeat-panel">
+          {editingLive.deferredUntil && <><span className="edit-hint">已放到 {editingLive.deferredUntil}，那天自动排入</span><button className="link-button" type="button" onClick={() => setTaskFlag(editingLive.id, { deferredUntil: undefined })}>留在今天</button></>}
+          {editingLive.forceToday && <><span className="edit-hint">已让它留在今天（可占用休息）</span><button className="link-button" type="button" onClick={() => setTaskFlag(editingLive.id, { forceToday: undefined })}>恢复自动安排</button></>}
+        </div>}
         {editError && <p className="error-text">{editError}</p>}
         <button className="add-button save-edit" type="button" onClick={saveEdit}>保存修改</button>
       </section>}
