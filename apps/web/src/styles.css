@@ -99,6 +99,16 @@ html.custom-bg-on body[data-theme='archive-terminal'] { background-image: none; 
 .decision-actions small { color: var(--warning); font-size: 11px; }
 .decision-actions .link-button { padding: 4px 0; font-size: 12px; }
 .tomorrow-group { margin-top: 16px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.carryover-card { border-style: dashed; }
+.carryover-list { display: flex; flex-direction: column; }
+.carryover-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px dashed var(--line); color: var(--secondary); font-size: 13px; cursor: pointer; }
+.carryover-row:last-child { border-bottom: 0; }
+.carryover-row input { width: 15px; height: 15px; accent-color: var(--accent); }
+.carryover-row small { color: var(--tertiary); font-size: 11px; }
+.review-card { border-style: dashed; }
+.review-card h2 { margin-bottom: 6px; }
+.review-list { margin: 12px 0 16px; padding-left: 18px; color: var(--secondary); font-size: 13px; line-height: 2; }
+.review-card .secondary-button { min-width: 72px; }
 button, input, textarea { font: inherit; }
 button { cursor: pointer; }
 

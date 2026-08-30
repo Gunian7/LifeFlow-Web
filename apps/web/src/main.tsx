@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { ExistingPlanBlock, Importance, PlannerTask, StoredTask, TaskDraft, RecurrenceRule, RecurringTemplate, ThemeId } from '../../../packages/core/src'
-import { buildExport, buildTimelineEntries, createTask, createTemplate, defaultTheme, deleteTask, editTask, getTheme, materializeOccurrences, mergeImportedTasks, parseImport, pinTask, replanToday, completeTask, uncompleteTask, unpinTask, themeIds } from '../../../packages/core/src'
+import { buildExport, buildTimelineEntries, completedThisWeek, createTask, createTemplate, defaultTheme, deleteTask, editTask, getTheme, materializeOccurrences, mergeImportedTasks, parseImport, pinTask, replanToday, selectCarryoverTasks, weekKey, completeTask, uncompleteTask, unpinTask, themeIds } from '../../../packages/core/src'
 import type { FocusSession } from '../../../packages/core/src/focus'
 import { focusRemainingSeconds, pauseFocus, resumeFocus, startFocus } from '../../../packages/core/src/focus'
 import { CropEditor } from './CropEditor'
@@ -18,6 +18,8 @@ const FOCUS_KEY = 'lifeflow-web-focus-v1'
 const API_CONFIG_KEY = 'lifeflow-web-api-v1'
 const BG_KEY = 'lifeflow-web-bg-v1'
 const PLANNER_KEY = 'lifeflow-web-planner-v1'
+const CARRYOVER_KEY = 'lifeflow-web-carryover-v1'
+const REVIEW_KEY = 'lifeflow-web-review-v1'
 
 const initialNow = new Date().toISOString()
 const initialTasks: LocalTask[] = [
@@ -240,6 +242,9 @@ function App() {
   const bgInputRef = useRef<HTMLInputElement | null>(null)
   const [plannerConfig, setPlannerConfig] = useState<PlannerConfig>(loadPlannerConfig)
   const [preferredOrder, setPreferredOrder] = useState<string[] | null>(null)
+  const [carryoverReviewed, setCarryoverReviewed] = useState(() => localStorage.getItem(CARRYOVER_KEY))
+  const [carryoverKeeps, setCarryoverKeeps] = useState<Record<string, boolean>>({})
+  const [reviewShown, setReviewShown] = useState(() => localStorage.getItem(REVIEW_KEY))
   const [editImportance, setEditImportance] = useState<Importance>('important')
   const [editSplittable, setEditSplittable] = useState(false)
   const [editDeadline, setEditDeadline] = useState('')
@@ -404,6 +409,30 @@ function App() {
   const todayStr = localDate(now)
   const tomorrowStr = localDate(new Date(Date.parse(now) + 86400000).toISOString())
   const tomorrowTasks = tasks.filter((task) => !task.done && task.deferredUntil !== undefined && task.deferredUntil > todayStr)
+  const carryoverItems = carryoverReviewed === todayStr ? [] : selectCarryoverTasks(tasks, todayStr)
+  const weekReview = completedThisWeek(tasks, now)
+  const reviewDue = reviewShown !== weekKey(now) && weekReview.length > 0
+
+  function finishCarryover() {
+    const dropped = carryoverItems.filter((item) => !(carryoverKeeps[item.taskId] ?? true))
+    if (dropped.length > 0) {
+      const droppedIds = new Set(dropped.map((item) => item.taskId))
+      setTasks((current) => current.map((task) => droppedIds.has(task.id) ? { ...task, status: 'skipped', updatedAt: new Date().toISOString() } : task))
+    }
+    localStorage.setItem(CARRYOVER_KEY, todayStr)
+    setCarryoverReviewed(todayStr)
+  }
+
+  function skipCarryover() {
+    localStorage.setItem(CARRYOVER_KEY, todayStr)
+    setCarryoverReviewed(todayStr)
+  }
+
+  function finishReview() {
+    const key = weekKey(now)
+    localStorage.setItem(REVIEW_KEY, key)
+    setReviewShown(key)
+  }
 
   function setTaskFlag(id: string, patch: Partial<PlannerTask>) {
     setTasks((current) => current.map((task) => task.id === id ? { ...task, ...patch, updatedAt: new Date().toISOString() } : task))
@@ -766,6 +795,13 @@ function App() {
         <section className="timeline-area">
           <section className="focus-line" aria-label="当前进行"><span className="focus-dot" />{plan.planBlocks.length ? '计划已经准备好了' : '先放下一件事'}<span className="muted">{changeCount ? `计划变了 ${changeCount} 处` : ''}</span></section>
 
+      {carryoverItems.length > 0 && <section className="edit-card carryover-card" aria-label="隔夜整理">
+        <div className="edit-heading"><p className="label">CARRYOVER / 隔夜整理</p></div>
+        <p className="settings-copy">昨天留下来的事，还想继续吗？勾着的留下，去掉的轻轻放下，不记任何账。</p>
+        <div className="carryover-list">{carryoverItems.map((item) => <label className="carryover-row" key={item.taskId}><input type="checkbox" checked={carryoverKeeps[item.taskId] ?? true} onChange={(event) => setCarryoverKeeps((current) => ({ ...current, [item.taskId]: event.target.checked }))} /><span className="carryover-title">{item.title}</span>{item.minutes !== undefined && <small>{item.minutes} 分钟</small>}</label>)}</div>
+        <div className="settings-actions"><button className="secondary-button" type="button" onClick={finishCarryover}>好</button><button className="link-button" type="button" onClick={skipCarryover}>先不管</button></div>
+      </section>}
+
       <section className="timeline-card" aria-label="今日时间线">
         <div className="section-heading">
           <div><p className="label">今日时间线</p><h2>{showAll ? '全部任务' : '接下来'}</h2></div>
@@ -863,6 +899,14 @@ function App() {
         {aiState === 'error' && <p className="error-text">{aiReason}</p>}
         {aiState === 'ready' && <><p className="detail-empty">{aiReason}</p><p className="ai-order">{aiOrder.map((id) => tasks.find((task) => task.id === id)?.title).filter(Boolean).join(' → ')}</p><div className="settings-actions"><button className="secondary-button" type="button" onClick={() => { setPreferredOrder(aiOrder); dismissAiAdvice() }}>就这么排</button><button className="link-button" type="button" onClick={dismissAiAdvice}>不用</button></div><small>采纳后本地规则仍负责具体时间安排，休息和缓冲照常保护。</small></>}
       </section>
+
+      {reviewDue && <section className="edit-card review-card" aria-label="每周回顾">
+        <p className="label">WEEKLY / 每周回顾</p>
+        <h2>这一周，你做过这些</h2>
+        <p className="settings-copy">不算完成率，不排名次。做过，就算数。</p>
+        <ul className="review-list">{weekReview.map((item) => <li key={item.title}>{item.title}{item.count > 1 ? ` ×${item.count}` : ''}</li>)}</ul>
+        <button className="secondary-button" type="button" onClick={finishReview}>好</button>
+      </section>}
 
       <section className="quiet-note"><span className="note-mark">✦</span><p>排不下的时候，我会告诉你原因。<br />不会偷偷吃掉你的休息。</p></section>
       <footer><span>本地保存 · 不需要账号</span><button className="link-button" type="button" onClick={() => setShowAll(true)}>查看全部任务</button></footer>
