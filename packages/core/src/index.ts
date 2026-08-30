@@ -10,7 +10,7 @@ export type ReasonCode =
   | 'ESTIMATE_REQUIRED' | 'FIXED_BLOCK_PROTECTED' | 'DEADLINE_TODAY'
   | 'DEADLINE_URGENT' | 'SPLIT_TO_FIT' | 'REST_PROTECTION'
   | 'PRESERVED_BUFFER' | 'CONFLICT_REQUIRES_DECISION'
-  | 'MANUALLY_LOCKED' | 'IN_PROGRESS_PROTECTED'
+  | 'MANUALLY_LOCKED' | 'IN_PROGRESS_PROTECTED' | 'USER_FORCED_TODAY'
 
 export interface PlannerTask {
   id: string
@@ -29,6 +29,11 @@ export interface PlannerTask {
   lockedEndAt?: string
   templateId?: string
   occurrenceDate?: string
+  // User decisions from the overflow prompt. forceToday lets a task consume
+  // the buffer and the rest window (up to the rest end, e.g. next morning);
+  // deferredUntil (a date) parks it until that day's plan.
+  forceToday?: boolean
+  deferredUntil?: string
 }
 
 export type StoredTask = PlannerTask & {
@@ -337,6 +342,40 @@ function fits(slots: Slot[], task: PlannerTask, latestEnd: number, target: numbe
   return slots.reduce((total, slot) => total + Math.max(0, Math.min(slot.end, latestEnd) - slot.start >= chunk ? Math.min(slot.end, latestEnd) - slot.start : 0), 0) >= minimum
 }
 
+// Try to book a task into the given slots. Returns the chunks to reserve
+// (already constrained by the task's deadline) or null when nothing fits.
+function bookTask(task: PlannerTask, slots: Slot[], now: number, dayEnd: number): { chunks: Slot[]; reasonCodes: ReasonCode[] } | null {
+  const target = task.targetDurationMinutes
+  if (target === undefined) return null
+  const targetMs = target * MINUTE
+  const latestEnd = task.deadlineAt === undefined ? Infinity : Date.parse(task.deadlineAt)
+  if (!task.splittable) {
+    for (const slot of slots) {
+      const usableEnd = Math.min(slot.end, latestEnd)
+      if (usableEnd - slot.start < targetMs) continue
+      return { chunks: [{ start: slot.start, end: slot.start + targetMs }], reasonCodes: reasonFor(task, now, dayEnd) }
+    }
+    return null
+  }
+  const minimum = (task.minimumDurationMinutes ?? target) * MINUTE
+  const minChunk = (task.minChunkMinutes ?? 0) * MINUTE
+  const staged: Slot[] = []
+  let allocated = 0
+  for (const slot of slots) {
+    if (allocated >= targetMs) break
+    const available = Math.min(slot.end, latestEnd) - slot.start
+    if (available < minChunk) continue
+    const chunk = Math.min(available, targetMs - allocated)
+    if (chunk < minChunk) break
+    staged.push({ start: slot.start, end: slot.start + chunk }); allocated += chunk
+  }
+  if (allocated >= minimum) {
+    const split = staged.length > 1 ? ['SPLIT_TO_FIT' as ReasonCode] : []
+    return { chunks: staged, reasonCodes: [...reasonFor(task, now, dayEnd), ...split] }
+  }
+  return null
+}
+
 export function planToday(input: PlannerInput): PlannerResult {
   const offset = offsetFor(input.settings.timezone)
   const startMinutes = minutesOf(input.settings.availabilityStartLocalTime)
@@ -374,7 +413,7 @@ export function planToday(input: PlannerInput): PlannerResult {
 
   const orderIndex = new Map((input.preferredOrder ?? []).map((id, index) => [id, index]))
   const candidates = input.tasks
-    .filter(task => ['inbox', 'planned', 'deferred'].includes(task.status))
+    .filter(task => ['inbox', 'planned', 'deferred'].includes(task.status) && !(task.deferredUntil !== undefined && task.deferredUntil > input.settings.planningDate))
     .sort((a, b) => {
       const ao = orderIndex.get(a.id) ?? Number.POSITIVE_INFINITY
       const bo = orderIndex.get(b.id) ?? Number.POSITIVE_INFINITY
@@ -390,42 +429,47 @@ export function planToday(input: PlannerInput): PlannerResult {
     if (task.targetDurationMinutes === undefined) { unscheduledTasks.push({ taskId: task.id, reasonCodes: ['ESTIMATE_REQUIRED'] }); continue }
     const target = task.targetDurationMinutes
     const latestEnd = task.deadlineAt === undefined ? Infinity : Date.parse(task.deadlineAt)
-    const targetMs = target * MINUTE
-    let placed = false
-    if (!task.splittable) {
-      for (const slot of slots) {
-        const usableEnd = Math.min(slot.end, latestEnd)
-        if (usableEnd - slot.start < targetMs) continue
-        planBlocks.push({ taskId: task.id, startAt: iso(slot.start), endAt: iso(slot.start + targetMs), source: 'automatic', reasonCodes: reasonFor(task, now, endMs) })
-        slots = subtract(slots, { start: slot.start, end: slot.start + targetMs })
-        placed = true
-        break
+    const booking = bookTask(task, slots, now, endMs)
+    if (booking) {
+      for (const chunk of booking.chunks) {
+        planBlocks.push({ taskId: task.id, startAt: iso(chunk.start), endAt: iso(chunk.end), source: 'automatic', reasonCodes: booking.reasonCodes })
+        slots = subtract(slots, chunk)
       }
     } else {
-      const minimum = (task.minimumDurationMinutes ?? target) * MINUTE
-      const minChunk = (task.minChunkMinutes ?? 0) * MINUTE
-      const staged: Slot[] = []
-      let allocated = 0
-      for (const slot of slots) {
-        if (allocated >= targetMs) break
-        const available = Math.min(slot.end, latestEnd) - slot.start
-        if (available < minChunk) continue
-        const chunk = Math.min(available, targetMs - allocated)
-        if (chunk < minChunk) break
-        staged.push({ start: slot.start, end: slot.start + chunk }); allocated += chunk
-      }
-      if (allocated >= minimum) {
-        const split = staged.length > 1 ? ['SPLIT_TO_FIT' as ReasonCode] : []
-        for (const chunk of staged) { planBlocks.push({ taskId: task.id, startAt: iso(chunk.start), endAt: iso(chunk.end), source: 'automatic', reasonCodes: [...reasonFor(task, now, endMs), ...split] }); slots = subtract(slots, chunk) }
-        placed = true
-      }
-    }
-    if (!placed) {
       const codes: ReasonCode[] = []
       if (fits(beforeBuffer, task, latestEnd, target)) codes.push('PRESERVED_BUFFER', 'CONFLICT_REQUIRES_DECISION')
       else if (fits(beforeRest, task, latestEnd, target)) codes.push('REST_PROTECTION', 'CONFLICT_REQUIRES_DECISION')
       else codes.push('INSUFFICIENT_TIME')
       unscheduledTasks.push({ taskId: task.id, reasonCodes: codes, remainingTargetMinutes: target })
+    }
+  }
+
+  // Second pass for tasks the user explicitly forced into today: release the
+  // buffer and the rest window, capped at the end of the rest window (or the
+  // window end plus buffer when rest is off) — at most the next morning.
+  const forcedCandidates = candidates.filter(task => task.forceToday === true && task.targetDurationMinutes !== undefined && !planBlocks.some(block => block.taskId === task.id) && unscheduledTasks.some(item => item.taskId === task.id))
+  if (forcedCandidates.length > 0) {
+    let extendedEnd = endMs + buffer
+    if (input.settings.rest.enabled) {
+      const restEndMinutes = minutesOf(input.settings.rest.endLocalTime)
+      const restStartMinutes = minutesOf(input.settings.rest.startLocalTime)
+      if (restEndMinutes >= 0 && restStartMinutes >= 0) {
+        let restEndMs = localMs(input.settings.planningDate, restEndMinutes, offset)
+        if (restEndMinutes <= restStartMinutes) restEndMs += DAY
+        extendedEnd = Math.max(extendedEnd, restEndMs)
+      }
+    }
+    let extended: Slot[] = beforeRest.map((slot, index, all) => index === all.length - 1 && slot.end < extendedEnd ? { start: slot.start, end: extendedEnd } : slot)
+    for (const block of planBlocks) extended = subtract(extended, { start: Date.parse(block.startAt), end: Date.parse(block.endAt) })
+    for (const task of forcedCandidates) {
+      const booking = bookTask(task, extended, now, extendedEnd)
+      if (!booking) continue
+      for (const chunk of booking.chunks) {
+        planBlocks.push({ taskId: task.id, startAt: iso(chunk.start), endAt: iso(chunk.end), source: 'automatic', reasonCodes: [...booking.reasonCodes, 'USER_FORCED_TODAY'] })
+        extended = subtract(extended, chunk)
+      }
+      const index = unscheduledTasks.findIndex(item => item.taskId === task.id)
+      if (index >= 0) unscheduledTasks.splice(index, 1)
     }
   }
   planBlocks.sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt) || a.taskId.localeCompare(b.taskId))

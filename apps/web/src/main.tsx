@@ -63,6 +63,13 @@ function loadFocus(): FocusSession | null {
   try { const raw = localStorage.getItem(FOCUS_KEY); return raw ? JSON.parse(raw) as FocusSession : null } catch { return null }
 }
 
+// The local calendar date (YYYY-MM-DD). toISOString().slice(0, 10) would give
+// the UTC date, which lags a day for every early-morning hour east of UTC.
+function localDate(iso: string): string {
+  const date = new Date(iso)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
 interface BackgroundConfig { dataUrl: string; blur: number; dim: number; saturate: number }
 const DEFAULT_BG: BackgroundConfig = { dataUrl: '', blur: 6, dim: 40, saturate: 100 }
 
@@ -212,7 +219,7 @@ function App() {
     return () => window.clearInterval(timer)
   }, [])
   const today = new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }).format(new Date(now))
-  const tagline = TAGLINES[Math.floor((Date.parse(`${now.slice(0, 10)}T00:00:00Z`) - Date.parse(`${now.slice(0, 4)}-01-01T00:00:00Z`)) / 86400000) % TAGLINES.length]
+  const tagline = TAGLINES[Math.floor((Date.parse(`${localDate(now)}T00:00:00Z`) - Date.parse(`${localDate(now).slice(0, 4)}-01-01T00:00:00Z`)) / 86400000) % TAGLINES.length]
   const [apiBaseUrl, setApiBaseUrl] = useState(loadApiBaseUrl)
   const [apiDraft, setApiDraft] = useState(() => { const saved = loadApiBaseUrl(); return saved === API_URL ? '' : saved })
   const [apiNotice, setApiNotice] = useState('')
@@ -275,12 +282,12 @@ function App() {
     if (!created.task) return
     let task = created.task
     if (createPinTime) {
-      const pinned = pinTask(task, createPinTime, new Date().toISOString().slice(0, 10), 'Asia/Shanghai', new Date().toISOString())
+      const pinned = pinTask(task, createPinTime, localDate(new Date().toISOString()), 'Asia/Shanghai', new Date().toISOString())
       if (!pinned.task) { setCreateError('这个时间已经过去了，或者时长还没填。'); return }
       task = pinned.task
     }
     if (createRepeatRule) {
-      const rule: RecurrenceRule = { kind: createRepeatRule.kind, weekdays: createRepeatRule.kind === 'weekly' ? createRepeatDays : undefined, startDate: new Date().toISOString().slice(0, 10) }
+      const rule: RecurrenceRule = { kind: createRepeatRule.kind, weekdays: createRepeatRule.kind === 'weekly' ? createRepeatDays : undefined, startDate: localDate(new Date().toISOString()) }
       const template = createTemplate(crypto.randomUUID(), cleanTitle, rule, new Date().toISOString())
       template.importance = createImportance
       template.targetDurationMinutes = draft.targetDurationMinutes
@@ -350,7 +357,7 @@ function App() {
   }, [templates])
 
   useEffect(() => {
-    const date = new Date().toISOString().slice(0, 10)
+    const date = localDate(new Date().toISOString())
     const materialized = materializeOccurrences(templates, tasks, date, new Date().toISOString())
     if (materialized.length !== tasks.length) setTasks(materialized)
   }, [templates])
@@ -358,7 +365,7 @@ function App() {
   const plannerInput = useMemo(() => ({
     now,
     settings: {
-      timezone: 'Asia/Shanghai', planningDate: now.slice(0, 10),
+      timezone: 'Asia/Shanghai', planningDate: localDate(now),
       availabilityStartLocalTime: plannerConfig.start, availabilityEndLocalTime: plannerConfig.end, dailyBufferMinutes: plannerConfig.bufferMinutes,
       rest: { enabled: plannerConfig.restEnabled, startLocalTime: plannerConfig.restStart, endLocalTime: plannerConfig.restEnd },
     },
@@ -379,6 +386,13 @@ function App() {
   const editingTemplate = editingTask?.templateId ? templates.find((item) => item.id === editingTask.templateId) : undefined
   const timelineEntries = buildTimelineEntries(plan.planBlocks, plannerInput.settings)
   const changeCount = plan.changes.length
+  const todayStr = localDate(now)
+  const tomorrowStr = localDate(new Date(Date.parse(now) + 86400000).toISOString())
+  const tomorrowTasks = tasks.filter((task) => !task.done && task.deferredUntil !== undefined && task.deferredUntil > todayStr)
+
+  function setTaskFlag(id: string, patch: Partial<PlannerTask>) {
+    setTasks((current) => current.map((task) => task.id === id ? { ...task, ...patch, updatedAt: new Date().toISOString() } : task))
+  }
 
   function addTask() {
     const cleanTitle = title.trim()
@@ -448,7 +462,7 @@ function App() {
     }
     let saved = result.task!
     if (pinTime) {
-      const pinned = pinTask(saved, pinTime, new Date().toISOString().slice(0, 10), 'Asia/Shanghai', new Date().toISOString())
+      const pinned = pinTask(saved, pinTime, localDate(new Date().toISOString()), 'Asia/Shanghai', new Date().toISOString())
       if (!pinned.task) { setEditError('这个时间已经过去了，或者时长还没填。'); return }
       saved = pinned.task
     } else if (editingTask.lockedStartAt) {
@@ -564,7 +578,7 @@ function App() {
     const blob = new Blob([buildExport(tasks, templates)], { type: 'application/json' })
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
-    link.download = `lifeflow-${new Date().toISOString().slice(0, 10)}.json`
+    link.download = `lifeflow-${localDate(new Date().toISOString())}.json`
     link.click()
     URL.revokeObjectURL(link.href)
   }
@@ -618,7 +632,7 @@ function App() {
   function saveRepeat() {
     if (!editingTask || (repeatRule?.kind === 'weekly' && repeatDays.length === 0)) return
     const kind = repeatRule?.kind ?? 'daily'
-    const rule: RecurrenceRule = { kind, weekdays: kind === 'weekly' ? repeatDays : undefined, startDate: new Date().toISOString().slice(0, 10) }
+    const rule: RecurrenceRule = { kind, weekdays: kind === 'weekly' ? repeatDays : undefined, startDate: localDate(new Date().toISOString()) }
     const template = createTemplate(crypto.randomUUID(), editingTask.title, rule, new Date().toISOString())
     template.importance = editingTask.importance; template.targetDurationMinutes = editingTask.targetDurationMinutes; template.splittable = editingTask.splittable; template.notes = editingTask.notes; template.place = editingTask.place
     setTemplates((current) => [...current, template])
@@ -739,21 +753,29 @@ function App() {
         <div className="timeline">
           {visibleTasks.length === 0 && <p className="empty">还没有安排。把现实中的事情写在下面。</p>}
           {timelineEntries.map((entry) => {
-            if (entry.kind !== 'task') return <div className={`special-row ${entry.kind}`} key={`${entry.kind}-${entry.startAt}`}><span className="special-time">{new Date(entry.startAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span><span>{entry.title}</span><small>{entry.kind === 'buffer' ? '为变化留出空间' : '这段时间本身就是计划的一部分'}</small></div>
+            if (entry.kind !== 'task') return <div className={`special-row ${entry.kind}`} key={`${entry.kind}-${entry.startAt}`}><span className="row-time">{new Date(entry.startAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span><span className="row-rail" aria-hidden="true"><i className="rail-dot" /></span><span className="special-copy"><span>{entry.title}</span><small>{entry.kind === 'buffer' ? '为变化留出空间' : '这段时间本身就是计划的一部分'}</small></span></div>
             const task = tasks.find((candidate) => candidate.id === entry.taskId)
             if (!task) return null
-            return <div className={`task-row ${task.done ? 'is-done' : ''} ${selectedTaskId === task.id ? 'is-selected' : ''}`} key={task.id}>
+            const isCurrent = !task.done && Date.parse(entry.startAt) <= Date.parse(now) && Date.parse(now) < Date.parse(entry.endAt)
+            return <div className={`task-row ${task.done ? 'is-done' : ''} ${selectedTaskId === task.id ? 'is-selected' : ''} ${isCurrent ? 'is-current' : ''}`} key={task.id}>
+              <span className="row-time">{new Date(entry.startAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
+              <span className="row-rail" aria-hidden="true"><i className={`rail-dot ${isCurrent ? 'is-now' : ''}`} /></span>
               <button className="task-main" type="button" onClick={() => { setSelectedTaskId(task.id); toggleTask(task.id) }}><span className="task-check" aria-hidden="true">{task.done ? '✓' : ''}</span><span className="task-copy"><span className="task-title">{task.title}{task.importance === 'must' && <span className="importance-badge">必须做</span>}</span><span className="task-place">{task.targetDurationMinutes ? `${task.targetDurationMinutes} 分钟` : '还没估时间'}{task.place ? ` · ${task.place}` : ''}</span>{task.notes && <span className="task-notes">{task.notes}</span>}</span></button>
-              <span className="task-time"><strong>{new Date(entry.startAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</strong><small>{task.done ? '已完成' : entry.source === 'manualLock' ? '已锁定' : '已安排'}</small></span>
+              <span className="task-side">{isCurrent && <span className="now-chip">现在</span>}<small>{task.done ? '已完成' : entry.source === 'manualLock' ? '已锁定' : '已安排'}</small></span>
               <button className="edit-button" type="button" onClick={() => openEditor(task)}>改</button>
             </div>
           })}
-          {showAll && plan.unscheduledTasks.length > 0 && <div className="deferred-list">
+          {showAll && (plan.unscheduledTasks.length > 0 || tomorrowTasks.length > 0) && <div className="deferred-list">
             <p className="label">今天没排进去</p>
             {plan.unscheduledTasks.map((item) => {
               const task = tasks.find((candidate) => candidate.id === item.taskId)
-              return task && <div className="deferred-row" key={item.taskId}><span>{task.title}</span><small>{reasonText(item.reasonCodes)}</small></div>
+              const decidable = item.reasonCodes.includes('PRESERVED_BUFFER') || item.reasonCodes.includes('REST_PROTECTION') || item.reasonCodes.includes('INSUFFICIENT_TIME')
+              return task && <div className="deferred-row decision-row" key={item.taskId}>
+                <span>{task.title}</span>
+                {decidable ? <span className="decision-actions"><small>{reasonText(item.reasonCodes)}</small><button className="link-button" type="button" onClick={() => setTaskFlag(item.taskId, { forceToday: true })}>放在今天</button><button className="link-button" type="button" onClick={() => setTaskFlag(item.taskId, { deferredUntil: tomorrowStr })}>放到明天</button><button className="link-button" type="button" onClick={() => { setSettingsSection('planning'); setSettingsOpen(true) }}>调整时段</button></span> : <small>{reasonText(item.reasonCodes)}</small>}
+              </div>
             })}
+            {tomorrowTasks.length > 0 && <div className="tomorrow-group"><p className="label">明天见</p>{tomorrowTasks.map((task) => <div className="deferred-row" key={task.id}><span>{task.title}</span><small>明天自动排入</small></div>)}</div>}
           </div>}
         </div>
       </section>
@@ -770,12 +792,13 @@ function App() {
       {createOpen && <section className="edit-card create-card" aria-label="新任务详细设置">
         <div className="edit-heading"><p className="label">新任务 · 详细设置</p><button className="link-button" type="button" onClick={resetCreate}>收起</button></div>
         <div className="repeat-panel"><span className="edit-hint">重要性</span>{([['must', '必须做'], ['important', '重要'], ['want', '想做']] as Array<[Importance, string]>).map(([value, label]) => <button className={createImportance === value ? 'choice active' : 'choice'} type="button" key={value} onClick={() => setCreateImportance(value)}>{label}</button>)}</div>
-        <div className="edit-grid"><input value={createPlace} onChange={(event) => setCreatePlace(event.target.value)} placeholder="在哪里" aria-label="在哪里" /><input type="time" value={createPinTime} onChange={(event) => setCreatePinTime(event.target.value)} aria-label="钉在几点，留空表示自动安排" /></div>
+        <div className="edit-grid"><input value={createPlace} onChange={(event) => setCreatePlace(event.target.value)} placeholder="在哪里" aria-label="在哪里" /><input type="time" value={createPinTime} onChange={(event) => setCreatePinTime(event.target.value)} aria-label="钉在几点" /></div>
+        <span className="edit-hint pin-hint">钉在几点，留空表示自动安排</span>
         <textarea value={createNotes} onChange={(event) => setCreateNotes(event.target.value)} placeholder="描述" rows={2} aria-label="描述" />
         <div className="repeat-panel">
           <span className="edit-hint">重复</span>
-          <button className={createRepeatRule?.kind === 'daily' ? 'choice active' : 'choice'} type="button" onClick={() => setCreateRepeatRule({ kind: 'daily', startDate: new Date().toISOString().slice(0, 10) })}>每天</button>
-          <button className={createRepeatRule?.kind === 'weekly' ? 'choice active' : 'choice'} type="button" onClick={() => setCreateRepeatRule({ kind: 'weekly', weekdays: createRepeatDays, startDate: new Date().toISOString().slice(0, 10) })}>每周</button>
+          <button className={createRepeatRule?.kind === 'daily' ? 'choice active' : 'choice'} type="button" onClick={() => setCreateRepeatRule({ kind: 'daily', startDate: localDate(new Date().toISOString()) })}>每天</button>
+          <button className={createRepeatRule?.kind === 'weekly' ? 'choice active' : 'choice'} type="button" onClick={() => setCreateRepeatRule({ kind: 'weekly', weekdays: createRepeatDays, startDate: localDate(new Date().toISOString()) })}>每周</button>
           {createRepeatRule?.kind === 'weekly' && <div className="weekday-list">{['日', '一', '二', '三', '四', '五', '六'].map((label, index) => <button className={createRepeatDays.includes(index) ? 'day active' : 'day'} type="button" key={label} onClick={() => setCreateRepeatDays((current) => current.includes(index) ? current.filter((value) => value !== index) : [...current, index])}>{label}</button>)}</div>}
           {createRepeatRule && <span className="edit-hint">会创建一条重复规则，今天生成第一件</span>}
         </div>
@@ -791,8 +814,8 @@ function App() {
         <div className="edit-grid"><input type="time" value={pinTime} onChange={(event) => setPinTime(event.target.value)} /><span className="edit-hint">留空表示自动安排</span></div>
         <div className="repeat-panel">
           <span className="edit-hint">重复</span>
-          <button className={repeatRule?.kind === 'daily' ? 'choice active' : 'choice'} type="button" onClick={() => setRepeatRule({ kind: 'daily', startDate: new Date().toISOString().slice(0, 10) })}>每天</button>
-          <button className={repeatRule?.kind === 'weekly' ? 'choice active' : 'choice'} type="button" onClick={() => setRepeatRule({ kind: 'weekly', weekdays: repeatDays, startDate: new Date().toISOString().slice(0, 10) })}>每周</button>
+          <button className={repeatRule?.kind === 'daily' ? 'choice active' : 'choice'} type="button" onClick={() => setRepeatRule({ kind: 'daily', startDate: localDate(new Date().toISOString()) })}>每天</button>
+          <button className={repeatRule?.kind === 'weekly' ? 'choice active' : 'choice'} type="button" onClick={() => setRepeatRule({ kind: 'weekly', weekdays: repeatDays, startDate: localDate(new Date().toISOString()) })}>每周</button>
           {repeatRule?.kind === 'weekly' && <div className="weekday-list">{['日', '一', '二', '三', '四', '五', '六'].map((label, index) => <button className={repeatDays.includes(index) ? 'day active' : 'day'} type="button" key={label} onClick={() => toggleRepeatDay(index)}>{label}</button>)}</div>}
           {repeatRule && <button className="secondary-button" type="button" onClick={saveRepeat}>保存重复规则</button>}
           {editingTask.templateId && !editingTemplate?.paused && <button className="link-button" type="button" onClick={() => stopRepeat(editingTask)}>暂停重复</button>}

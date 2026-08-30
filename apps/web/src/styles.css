@@ -84,9 +84,21 @@ html.custom-bg-on body[data-theme='archive-terminal'] { background-image: none; 
 .mic-button.listening { border-color: var(--accent); color: var(--accent); animation: mic-pulse 1.2s ease-in-out infinite; }
 @keyframes mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 35%, transparent); } 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 12%, transparent); } }
 .voice-error { margin: 6px 0 0; color: var(--error); font-size: 12px; }
+.create-card { padding: 24px; }
+.create-card .edit-heading { margin-bottom: 18px; }
+.create-card .edit-grid { gap: 12px; margin-bottom: 12px; }
+.create-card .edit-grid input { margin-bottom: 0; }
+.create-card .repeat-panel { margin-top: 16px; row-gap: 10px; }
+.create-card textarea { margin-bottom: 12px; }
+.pin-hint { display: block; margin: -6px 0 12px; }
 .expand-toggle { margin: 6px 0 0; padding: 4px 0; font-size: 12px; }
 .create-card { border-style: dashed; }
 .create-card textarea { width: 100%; resize: vertical; line-height: 1.6; }
+.decision-row { flex-wrap: wrap; row-gap: 4px; }
+.decision-actions { display: flex; align-items: center; gap: 10px; }
+.decision-actions small { color: var(--warning); font-size: 11px; }
+.decision-actions .link-button { padding: 4px 0; font-size: 12px; }
+.tomorrow-group { margin-top: 16px; padding-top: 12px; border-top: 1px dashed var(--line); }
 button, input, textarea { font: inherit; }
 button { cursor: pointer; }
 
@@ -115,27 +127,32 @@ h2 { margin: 7px 0 0; font-size: 21px; font-weight: var(--heading-weight); lette
 .muted { color: var(--tertiary); font-size: 12px; }
 .focus-line { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; color: var(--secondary); font-size: 13px; }
 .focus-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
-.timeline { border-top: 1px solid var(--line); }
-.task-row { display: flex; width: 100%; align-items: center; gap: 12px; min-height: 82px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: inherit; text-align: left; transition: background 180ms ease-out; }
+.timeline { position: relative; border-top: 1px solid var(--line); }
+.task-row { display: grid; grid-template-columns: 48px 24px minmax(0, 1fr) auto auto; align-items: center; gap: 10px; min-height: 82px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: inherit; text-align: left; transition: background 180ms ease-out; }
 .task-row:hover { background: color-mix(in srgb, var(--surface) 42%, transparent); }
-.task-row.is-current { border-left: 2px solid var(--accent); padding-left: 10px; background: var(--current-surface); }
+.task-row.is-current { background: var(--current-surface); }
 body[data-theme='archive-terminal'] .task-row.is-current { background: color-mix(in srgb, var(--surface) 18%, transparent); }
+.row-time { color: var(--secondary); font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
+.task-row.is-current .row-time { color: var(--accent); font-weight: 500; }
+.row-rail { position: relative; align-self: stretch; display: flex; align-items: center; justify-content: center; }
+.row-rail::before { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--line); }
+.rail-dot { position: relative; width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--secondary); background: var(--bg); }
+.rail-dot.is-now { border-color: var(--accent); background: var(--accent); }
+.now-chip { position: absolute; top: calc(50% - 26px); left: 50%; transform: translateX(-50%); padding: 1px 6px; border-radius: 999px; background: var(--accent); color: var(--selection-text); font-size: 10px; white-space: nowrap; }
+.task-side { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; color: var(--tertiary); font-size: 11px; }
 .task-main { display: flex; min-width: 0; flex: 1; align-items: center; gap: 14px; border: 0; background: transparent; color: inherit; text-align: left; }
 .task-check { flex: 0 0 auto; width: 18px; height: 18px; border: 1px solid var(--tertiary); border-radius: 50%; }
 .task-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 5px; }
 .task-title { font-size: 15px; }
 .task-row.is-current .task-title { font-weight: 600; }
 .task-notes { overflow: hidden; color: var(--tertiary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.special-row { display: grid; grid-template-columns: 84px 1fr auto; align-items: center; gap: 12px; min-height: 58px; border-bottom: 1px solid var(--line); color: var(--secondary); font-size: 13px; }
+.special-row { display: grid; grid-template-columns: 48px 26px minmax(0, 1fr); align-items: center; gap: 10px; min-height: 58px; border-bottom: 1px solid var(--line); color: var(--secondary); font-size: 13px; }
 .special-row small { color: var(--tertiary); font-size: 11px; }
-.special-time { color: var(--tertiary); font-variant-numeric: tabular-nums; }
+.special-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .special-row.rest { color: var(--secondary); }
 .special-row.buffer { color: var(--warning); }
 .task-notes { color: var(--tertiary); }
-.task-time { flex: 0 0 84px; text-align: right; }
-.task-time strong { display: block; color: var(--secondary); font-size: 15px; font-variant-numeric: tabular-nums; font-weight: 500; }
-.task-row.is-current .task-time strong { color: var(--accent); }
-.task-time small { display: block; margin-top: 4px; color: var(--tertiary); font-size: 11px; }
+.task-side small { color: var(--tertiary); font-size: 11px; }
 .edit-button { flex: 0 0 auto; border: 0; background: transparent; color: var(--tertiary); padding: 10px 2px; }
 .edit-button:hover { color: var(--accent); }
 .task-row.is-done { opacity: .55; }
@@ -238,8 +255,8 @@ footer { display: flex; justify-content: space-between; margin-top: 18px; color:
   .sidebar { display: flex; gap: 22px; overflow-x: auto; padding: 18px 0 12px; border-right: 0; border-bottom: 1px solid var(--line); }
   .side-block { min-width: 130px; padding-bottom: 0; }
   .timeline-area { padding: 24px 0 0; }
-  .task-row { min-height: 74px; }
-  .task-time { flex-basis: 72px; }
+  .task-row { min-height: 74px; grid-template-columns: 40px 20px minmax(0, 1fr) auto auto; }
+  .special-row { grid-template-columns: 40px 20px minmax(0, 1fr); }
   .capture { gap: 6px; }
   .capture input { padding-left: 11px; padding-right: 11px; }
   .add-button { padding: 0 15px; }
