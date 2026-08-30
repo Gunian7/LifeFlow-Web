@@ -12,7 +12,13 @@ type Bindings = {
 
 const app = new Hono<{ Bindings: Bindings }>()
 
-app.use('*', cors({ origin: 'https://gunian7.github.io', allowMethods: ['GET', 'POST', 'OPTIONS'], allowHeaders: ['Content-Type'] }))
+const allowedOrigins = [
+  'https://gunian7.github.io',
+  'http://localhost:5173', 'http://127.0.0.1:5173',
+  'http://localhost:4173', 'http://127.0.0.1:4173',
+]
+
+app.use('*', cors({ origin: allowedOrigins, allowMethods: ['GET', 'POST', 'OPTIONS'], allowHeaders: ['Content-Type'] }))
 
 app.get('/health', (context) => context.json({ ok: true, service: 'lifeflow-api' }))
 app.post('/v1/ai/order', (context) => {

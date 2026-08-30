@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { ExistingPlanBlock, PlannerTask, StoredTask, TaskDraft, RecurrenceRule, RecurringTemplate, ThemeId } from '../../../packages/core/src'
-import { buildExport, buildTimelineEntries, createTask, createTemplate, editTask, getTheme, materializeOccurrences, mergeImportedTasks, parseImport, pinTask, replanToday, completeTask, uncompleteTask, unpinTask, themeIds } from '../../../packages/core/src'
+import { buildExport, buildTimelineEntries, createTask, createTemplate, defaultTheme, deleteTask, editTask, getTheme, materializeOccurrences, mergeImportedTasks, parseImport, pinTask, replanToday, completeTask, uncompleteTask, unpinTask, themeIds } from '../../../packages/core/src'
 import type { FocusSession } from '../../../packages/core/src/focus'
-import { focusRemainingSeconds, pauseFocus, resumeFocus, startFocus, stopFocus } from '../../../packages/core/src/focus'
+import { focusRemainingSeconds, pauseFocus, resumeFocus, startFocus } from '../../../packages/core/src/focus'
 import './styles.css'
 
 type LocalTask = StoredTask
@@ -13,7 +13,8 @@ const TEMPLATE_KEY = 'lifeflow-web-templates-v1'
 const THEME_KEY = 'lifeflow-web-theme-v1'
 const API_URL = 'https://lifeflow-api.mosesbeck761988kdl.workers.dev'
 const FOCUS_KEY = 'lifeflow-web-focus-v1'
-const today = new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }).format(new Date())
+const API_CONFIG_KEY = 'lifeflow-web-api-v1'
+const BG_KEY = 'lifeflow-web-bg-v1'
 
 const initialNow = new Date().toISOString()
 const initialTasks: LocalTask[] = [
@@ -59,6 +60,80 @@ function loadFocus(): FocusSession | null {
   try { const raw = localStorage.getItem(FOCUS_KEY); return raw ? JSON.parse(raw) as FocusSession : null } catch { return null }
 }
 
+function formatFocusRemaining(session: FocusSession): string {
+  const seconds = focusRemainingSeconds(session, new Date().toISOString())
+  return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`
+}
+
+interface BackgroundConfig { dataUrl: string; blur: number; dim: number; saturate: number; focusX: number; focusY: number; zoom: number }
+const DEFAULT_BG: BackgroundConfig = { dataUrl: '', blur: 6, dim: 40, saturate: 100, focusX: 50, focusY: 50, zoom: 100 }
+
+function normalizeBaseUrl(value: string): string | null {
+  const trimmed = value.trim().replace(/\/+$/, '')
+  return /^https?:\/\//.test(trimmed) ? trimmed : null
+}
+
+function loadApiBaseUrl(): string {
+  try {
+    const raw = localStorage.getItem(API_CONFIG_KEY)
+    if (!raw) return API_URL
+    const parsed = JSON.parse(raw) as { baseUrl?: string }
+    return typeof parsed.baseUrl === 'string' ? normalizeBaseUrl(parsed.baseUrl) ?? API_URL : API_URL
+  } catch {
+    return API_URL
+  }
+}
+
+function clampParam(value: unknown, min: number, max: number, fallback: number): number {
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) ? Math.min(max, Math.max(min, Math.round(parsed))) : fallback
+}
+
+function loadBackground(): BackgroundConfig {
+  try {
+    const raw = localStorage.getItem(BG_KEY)
+    if (!raw) return DEFAULT_BG
+    const parsed = JSON.parse(raw) as Partial<BackgroundConfig>
+    if (!parsed.dataUrl) return DEFAULT_BG
+    return {
+      dataUrl: parsed.dataUrl,
+      blur: clampParam(parsed.blur, 0, 24, DEFAULT_BG.blur),
+      dim: clampParam(parsed.dim, 0, 85, DEFAULT_BG.dim),
+      saturate: clampParam(parsed.saturate, 0, 200, DEFAULT_BG.saturate),
+      focusX: clampParam(parsed.focusX, 0, 100, DEFAULT_BG.focusX),
+      focusY: clampParam(parsed.focusY, 0, 100, DEFAULT_BG.focusY),
+      zoom: clampParam(parsed.zoom, 100, 300, DEFAULT_BG.zoom),
+    }
+  } catch {
+    return DEFAULT_BG
+  }
+}
+
+function readImageFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('read-failed'))
+    reader.onload = () => {
+      const dataUrl = String(reader.result ?? '')
+      if (file.size <= 800 * 1024) { resolve(dataUrl); return }
+      const image = new Image()
+      image.onerror = () => reject(new Error('decode-failed'))
+      image.onload = () => {
+        const scale = Math.min(1, 1920 / Math.max(image.width, image.height))
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.max(1, Math.round(image.width * scale))
+        canvas.height = Math.max(1, Math.round(image.height * scale))
+        const context = canvas.getContext('2d')
+        if (!context) { resolve(dataUrl); return }
+        context.drawImage(image, 0, 0, canvas.width, canvas.height)
+        resolve(canvas.toDataURL('image/jpeg', 0.85))
+      }
+      image.src = dataUrl
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
 function App() {
   const [tasks, setTasks] = useState<LocalTask[]>(loadTasks)
   const [existingBlocks, setExistingBlocks] = useState<ExistingPlanBlock[]>(loadPlan)
@@ -93,6 +168,30 @@ function App() {
   const [aiState, setAiState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [aiReason, setAiReason] = useState('')
   const [aiOrder, setAiOrder] = useState<string[]>([])
+  const [now, setNow] = useState(() => new Date().toISOString())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date().toISOString()), 60000)
+    return () => window.clearInterval(timer)
+  }, [])
+  const today = new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }).format(new Date(now))
+  const [apiBaseUrl, setApiBaseUrl] = useState(loadApiBaseUrl)
+  const [apiDraft, setApiDraft] = useState(() => { const saved = loadApiBaseUrl(); return saved === API_URL ? '' : saved })
+  const [apiNotice, setApiNotice] = useState('')
+  const [apiNoticeTone, setApiNoticeTone] = useState<'info' | 'ok' | 'fail'>('info')
+  const [apiTesting, setApiTesting] = useState(false)
+  const [background, setBackground] = useState<BackgroundConfig>(loadBackground)
+  const [bgNotice, setBgNotice] = useState('')
+  const bgInputRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('custom-bg-on', Boolean(background.dataUrl))
+    try {
+      if (!background.dataUrl) { localStorage.removeItem(BG_KEY); return }
+      localStorage.setItem(BG_KEY, JSON.stringify(background))
+    } catch {
+      setBgNotice('图片太大，浏览器存不下，请换一张小一点的。')
+    }
+  }, [background])
 
   useEffect(() => {
     localStorage.setItem(THEME_KEY, themeId)
@@ -117,11 +216,13 @@ function App() {
     }
     for (const [name, value] of Object.entries(tokenMap)) root.style.setProperty(name, value)
     document.body.dataset.theme = theme.id
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme.tokens.background)
   }, [themeId, theme])
 
   useEffect(() => {
     if (!focusSession) { localStorage.removeItem(FOCUS_KEY); return }
     localStorage.setItem(FOCUS_KEY, JSON.stringify(focusSession))
+    if (focusSession.state !== 'running') return
     const timer = window.setInterval(() => setFocusTick((tick) => tick + 1), 1000)
     return () => window.clearInterval(timer)
   }, [focusSession])
@@ -140,14 +241,14 @@ function App() {
   }, [templates])
 
   const plannerInput = useMemo(() => ({
-    now: new Date().toISOString(),
+    now,
     settings: {
-      timezone: 'Asia/Shanghai', planningDate: new Date().toISOString().slice(0, 10),
+      timezone: 'Asia/Shanghai', planningDate: now.slice(0, 10),
       availabilityStartLocalTime: '08:00', availabilityEndLocalTime: '23:30', dailyBufferMinutes: 45,
       rest: { enabled: true, startLocalTime: '23:30', endLocalTime: '07:30' },
     },
     tasks: tasks.filter((task) => !task.done), fixedBlocks: [],
-  }), [tasks])
+  }), [tasks, now])
 
   const plan = useMemo(() => replanToday({ ...plannerInput, existingBlocks }), [plannerInput, existingBlocks])
   useEffect(() => {
@@ -159,6 +260,7 @@ function App() {
   const visibleTasks = showAll ? tasks : tasks.filter((task) => scheduledIds.has(task.id) || task.done)
   const selectedTask = tasks.find((task) => task.id === selectedTaskId)
   const selectedBlock = plan.planBlocks.find((block) => block.taskId === selectedTaskId)
+  const editingTemplate = editingTask?.templateId ? templates.find((item) => item.id === editingTask.templateId) : undefined
   const timelineEntries = buildTimelineEntries(plan.planBlocks, plannerInput.settings)
   const changeCount = plan.changes.length
 
@@ -183,6 +285,19 @@ function App() {
     setTasks((current) => current.map((task) => task.id === id
       ? (task.done ? uncompleteTask(task, new Date().toISOString()) : completeTask(task, new Date().toISOString()))
       : task))
+  }
+
+  function removeTask(id: string) {
+    const task = tasks.find((item) => item.id === id)
+    if (!task) return
+    const message = task.templateId
+      ? `删除「${task.title}」？明天仍会生成新的一件；要彻底停止请先在编辑里停止重复。`
+      : `删除「${task.title}」？`
+    if (!window.confirm(message)) return
+    setTasks((current) => deleteTask(current, id))
+    if (selectedTaskId === id) setSelectedTaskId(null)
+    if (editingTask?.id === id) setEditingTask(null)
+    if (focusSession?.taskId === id) setFocusSession(null)
   }
 
   function openEditor(task: LocalTask) {
@@ -248,13 +363,78 @@ function App() {
     if (candidates.length === 0) return
     setAiState('loading'); setAiReason('')
     try {
-      const response = await fetch(`${API_URL}/v1/ai/order`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tasks: candidates }) })
+      const response = await fetch(`${apiBaseUrl}/v1/ai/order`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tasks: candidates }) })
       const result = await response.json() as { ok?: boolean; order?: string[]; reason?: string }
       if (!response.ok || !result.ok || !result.order || !result.reason) throw new Error('AI_UNAVAILABLE')
       setAiOrder(result.order); setAiReason(result.reason); setAiState('ready')
     } catch {
       setAiState('error'); setAiReason('AI 暂时不可用，本地计划没有改变。')
     }
+  }
+
+  function dismissAiAdvice() {
+    setAiState('idle'); setAiOrder([]); setAiReason('')
+  }
+
+  async function saveApiConfig() {
+    const trimmed = apiDraft.trim()
+    if (!trimmed) {
+      localStorage.removeItem(API_CONFIG_KEY)
+      setApiBaseUrl(API_URL)
+      setApiDraft('')
+      setApiNoticeTone('info'); setApiNotice('已恢复默认服务地址。')
+      return
+    }
+    const normalized = normalizeBaseUrl(trimmed)
+    if (!normalized) { setApiNoticeTone('fail'); setApiNotice('地址要以 http:// 或 https:// 开头。'); return }
+    localStorage.setItem(API_CONFIG_KEY, JSON.stringify({ baseUrl: normalized }))
+    setApiBaseUrl(normalized)
+    setApiDraft(normalized)
+    setApiNoticeTone('ok'); setApiNotice('已保存，可以用「测试连接」确认服务在线。')
+  }
+
+  async function testApiConnection() {
+    setApiTesting(true)
+    setApiNoticeTone('info'); setApiNotice('正在连接……')
+    const startedAt = Date.now()
+    try {
+      const controller = new AbortController()
+      const timer = window.setTimeout(() => controller.abort(), 5000)
+      const response = await fetch(`${apiBaseUrl}/health`, { signal: controller.signal })
+      window.clearTimeout(timer)
+      if (response.ok) { setApiNoticeTone('ok'); setApiNotice(`连接正常（${Date.now() - startedAt} ms）。`) }
+      else { setApiNoticeTone('fail'); setApiNotice(`服务返回了 ${response.status}。`) }
+    } catch (error) {
+      const aborted = error instanceof DOMException && error.name === 'AbortError'
+      setApiNoticeTone('fail')
+      setApiNotice(aborted ? '5 秒内没有响应。' : '无法连接，检查地址或服务是否在线。')
+    } finally {
+      setApiTesting(false)
+    }
+  }
+
+  function handleBackgroundFile(file: File) {
+    setBgNotice('')
+    if (!file.type.startsWith('image/')) { setBgNotice('请选择图片文件。'); return }
+    readImageFile(file)
+      .then((dataUrl) => {
+        if (dataUrl.length > Math.round(2.5 * 1024 * 1024)) { setBgNotice('图片太大，浏览器存不下，请换一张小一点的。'); return }
+        setBackground((current) => ({ ...current, dataUrl, focusX: DEFAULT_BG.focusX, focusY: DEFAULT_BG.focusY, zoom: DEFAULT_BG.zoom }))
+      })
+      .catch(() => setBgNotice('这张图片读取失败，请换一张试试。'))
+  }
+
+  function updateBackground(patch: Partial<BackgroundConfig>) {
+    setBackground((current) => ({ ...current, ...patch }))
+  }
+
+  function resetBackgroundParams() {
+    setBackground((current) => ({ ...current, blur: DEFAULT_BG.blur, dim: DEFAULT_BG.dim, saturate: DEFAULT_BG.saturate, focusX: DEFAULT_BG.focusX, focusY: DEFAULT_BG.focusY, zoom: DEFAULT_BG.zoom }))
+  }
+
+  function removeBackgroundImage() {
+    setBackground(DEFAULT_BG)
+    setBgNotice('')
   }
 
   function exportData() {
@@ -289,10 +469,19 @@ function App() {
 
   function deleteAllData() {
     if (!window.confirm('确定删除 LifeFlow 保存的全部本地数据吗？此操作不可撤销。')) return
-    localStorage.removeItem(STORAGE_KEY)
-    localStorage.removeItem(PLAN_KEY)
+    for (const key of [STORAGE_KEY, PLAN_KEY, TEMPLATE_KEY, FOCUS_KEY, THEME_KEY, API_CONFIG_KEY, BG_KEY]) localStorage.removeItem(key)
     setTasks([])
     setExistingBlocks([])
+    setTemplates([])
+    setFocusSession(null)
+    setThemeId(defaultTheme.id)
+    setImportNotice('')
+    setAiState('idle'); setAiOrder([]); setAiReason('')
+    setApiBaseUrl(API_URL)
+    setApiDraft('')
+    setApiNotice('')
+    setBackground(DEFAULT_BG)
+    setBgNotice('')
     setSettingsOpen(false)
   }
 
@@ -316,8 +505,34 @@ function App() {
     setTemplates((current) => current.map((item) => item.id === task.templateId ? { ...item, paused: true } : item))
   }
 
+  function resumeRepeat(task: LocalTask) {
+    if (!task.templateId) return
+    setTemplates((current) => current.map((item) => item.id === task.templateId ? { ...item, paused: false } : item))
+  }
+
+  function deleteRepeat(task: LocalTask) {
+    if (!task.templateId) return
+    if (!window.confirm('停止这条重复规则？已生成的任务会保留，之后不再生成新的。')) return
+    const templateId = task.templateId
+    setTemplates((current) => current.filter((item) => item.id !== templateId))
+    const unlink = (item: LocalTask) => item.templateId === templateId ? { ...item, templateId: undefined, occurrenceDate: undefined } : item
+    setTasks((current) => current.map(unlink))
+    setEditingTask((current) => current ? unlink(current) : current)
+  }
+
+  const backgroundLayers = background.dataUrl ? (
+    <>
+      <div className="custom-bg-image" aria-hidden="true">
+        <img src={background.dataUrl} alt="" style={{ objectPosition: `${background.focusX}% ${background.focusY}%`, transform: `scale(${background.zoom / 100})`, transformOrigin: `${background.focusX}% ${background.focusY}%`, filter: `blur(${background.blur}px) saturate(${background.saturate}%)` }} />
+      </div>
+      <div className="custom-bg-scrim" aria-hidden="true" style={{ opacity: background.dim / 100 }} />
+    </>
+  ) : null
+
   if (settingsOpen) return (
-    <main className="shell settings-page">
+    <>
+      {backgroundLayers}
+      <main className="shell settings-page">
       <header className="header">
         <div><p className="eyebrow">LIFEFLOW / SYSTEM</p><h1>设置</h1><p className="date">调整 LifeFlow 的工作方式</p></div>
         <button className="ghost-button back-plan" type="button" onClick={() => setSettingsOpen(false)}>返回计划</button>
@@ -328,17 +543,20 @@ function App() {
           {settingsItems.map((item) => <button className={`settings-nav-item ${settingsSection === item.id ? 'selected' : ''}`} type="button" key={item.id} onClick={() => setSettingsSection(item.id)}>{item.label}<span aria-hidden="true">›</span></button>)}
         </nav>
         <div className="settings-content">
-          {settingsSection === 'appearance' && <section className="settings-section" aria-label="外观设置"><p className="label">APPEARANCE / 外观</p><h2>视觉皮肤</h2><p className="settings-copy">皮肤只改变表现方式，不改变任务、计划规则或数据归属。</p><div className="theme-picker">{themeIds.map((id) => { const option = getTheme(id); return <button className={`theme-option ${themeId === id ? 'selected' : ''}`} type="button" key={id} onClick={() => setThemeId(id)}><span className="theme-swatch" style={{ background: option.tokens.background, borderColor: option.tokens.accent }} /><span><strong>{option.name}</strong><small>{option.description}</small></span></button> })}</div></section>}
+          {settingsSection === 'appearance' && <section className="settings-section" aria-label="外观设置"><p className="label">APPEARANCE / 外观</p><h2>视觉皮肤</h2><p className="settings-copy">皮肤只改变表现方式，不改变任务、计划规则或数据归属。</p><div className="theme-picker">{themeIds.map((id) => { const option = getTheme(id); return <button className={`theme-option ${themeId === id ? 'selected' : ''}`} type="button" key={id} onClick={() => setThemeId(id)}><span className="theme-swatch" style={{ background: option.tokens.background, borderColor: option.tokens.accent }} /><span><strong>{option.name}</strong><small>{option.description}</small></span></button> })}</div><div className="bg-picker"><p className="label">背景图</p><p className="settings-copy">用一张自己的图片做页面背景。点击预览图挑选想重点保留的区域，配合缩放进一步裁剪画面；模糊和遮罩帮文字保持可读。它只影响外观，不影响任务数据。</p>{background.dataUrl && <div className="bg-preview" role="button" tabIndex={0} aria-label="点击选择背景重点区域" title="点击预览图，选择想让背景重点显示的区域" onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); const focusX = Math.round(Math.min(100, Math.max(0, ((event.clientX - rect.left) / rect.width) * 100))); const focusY = Math.round(Math.min(100, Math.max(0, ((event.clientY - rect.top) / rect.height) * 100))); updateBackground({ focusX, focusY }) }} style={{ backgroundImage: `url(${background.dataUrl})`, backgroundPosition: `${background.focusX}% ${background.focusY}%` }} aria-hidden="true" />}<input ref={bgInputRef} className="file-input" type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) handleBackgroundFile(file); event.currentTarget.value = '' }} /><div className="settings-actions"><button className="secondary-button" type="button" onClick={() => bgInputRef.current?.click()}>选择图片</button>{background.dataUrl && <button className="secondary-button" type="button" onClick={resetBackgroundParams}>恢复默认参数</button>}{background.dataUrl && <button className="secondary-button" type="button" onClick={removeBackgroundImage}>移除背景图</button>}</div>{background.dataUrl && <div className="bg-controls"><label>模糊<input type="range" min={0} max={24} value={background.blur} onChange={(event) => updateBackground({ blur: Number(event.target.value) })} /><span>{background.blur}px</span></label><label>遮罩<input type="range" min={0} max={85} value={background.dim} onChange={(event) => updateBackground({ dim: Number(event.target.value) })} /><span>{background.dim}%</span></label><label>饱和度<input type="range" min={0} max={200} value={background.saturate} onChange={(event) => updateBackground({ saturate: Number(event.target.value) })} /><span>{background.saturate}%</span></label><label>缩放<input type="range" min={100} max={300} value={background.zoom} onChange={(event) => updateBackground({ zoom: Number(event.target.value) })} /><span>{background.zoom}%</span></label></div>}{bgNotice && <p className="import-notice">{bgNotice}</p>}</div></section>}
           {settingsSection === 'data' && <section className="settings-section" aria-label="数据设置"><p className="label">DATA / 数据</p><h2>本地数据</h2><p className="settings-copy">任务保存在这台设备的浏览器里。没有账号，也不会自动上传。导入时，相同任务会保留更新时间较新的一份。</p><input ref={importInputRef} className="file-input" type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) importData(file); event.currentTarget.value = '' }} /><div className="settings-actions"><button className="secondary-button" type="button" onClick={exportData}>导出数据</button><button className="secondary-button" type="button" onClick={() => importInputRef.current?.click()}>导入数据</button><button className="danger-button" type="button" onClick={deleteAllData}>删除全部数据</button></div>{importNotice && <p className="import-notice">{importNotice}</p>}</section>}
-          {settingsSection === 'ai' && <section className="settings-section settings-placeholder" aria-label="AI 与服务设置"><p className="label">AI / AI 与服务</p><h2>AI 顾问</h2><p className="settings-copy">AI 建议会在你明确请求时使用。它只能提供顺序建议，不能替代本地 Planner，也不会自动修改你的计划。</p><span className="muted">后端连接状态将在这里显示</span></section>}
+          {settingsSection === 'ai' && <section className="settings-section" aria-label="AI 与服务设置"><p className="label">AI / AI 与服务</p><h2>AI 顾问</h2><p className="settings-copy">AI 建议会在你明确请求时使用。它只能提供顺序建议，不能替代本地 Planner，也不会自动修改你的计划。</p><p className="settings-copy">也可以接入自己的后端：只要提供 GET /health 和 POST /v1/ai/order（返回的顺序必须恰好包含每个任务 id 一次，并附一句理由），LifeFlow 就把请求发到你的服务。</p><div className="api-field"><p className="label">服务地址</p><input value={apiDraft} onChange={(event) => setApiDraft(event.target.value)} placeholder={API_URL} aria-label="后端服务地址" /></div><div className="settings-actions"><button className="secondary-button" type="button" onClick={saveApiConfig}>保存</button><button className="secondary-button" type="button" onClick={testApiConnection} disabled={apiTesting}>测试连接</button></div>{apiNotice && <p className="import-notice" style={{ color: apiNoticeTone === 'ok' ? 'var(--success)' : apiNoticeTone === 'fail' ? 'var(--error)' : undefined }}>{apiNotice}</p>}</section>}
           {settingsSection === 'about' && <section className="settings-section settings-placeholder" aria-label="关于 LifeFlow"><p className="label">ABOUT / 关于</p><h2>LifeFlow</h2><p className="settings-copy">一个帮助你重新进入生活的现实型时间规划工具。</p><span className="muted">本地优先 · 无需登录 · 计划可解释</span></section>}
         </div>
       </section>
     </main>
+    </>
   )
 
   return (
-    <main className="shell">
+    <>
+      {backgroundLayers}
+      <main className="shell">
       <header className="header">
         <div>
           <p className="eyebrow">LIFEFLOW</p>
@@ -395,7 +613,7 @@ function App() {
       </section>
 
       {editingTask && <section className="edit-card" aria-label="编辑任务">
-        <div className="edit-heading"><p className="label">编辑任务</p><button className="link-button" type="button" onClick={() => setEditingTask(null)}>取消</button></div>
+        <div className="edit-heading"><p className="label">编辑任务</p><span className="edit-heading-actions"><button className="link-button danger-link" type="button" onClick={() => removeTask(editingTask.id)}>删除这件事</button><button className="link-button" type="button" onClick={() => setEditingTask(null)}>取消</button></span></div>
         <input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} placeholder="要做什么？" />
         <div className="edit-grid"><input value={editMinutes} onChange={(event) => setEditMinutes(event.target.value)} placeholder="分钟" inputMode="numeric" /><input value={editPlace} onChange={(event) => setEditPlace(event.target.value)} placeholder="在哪里" /></div>
         <textarea value={editNotes} onChange={(event) => setEditNotes(event.target.value)} placeholder="描述" rows={3} />
@@ -406,20 +624,21 @@ function App() {
           <button className={repeatRule?.kind === 'weekly' ? 'choice active' : 'choice'} type="button" onClick={() => setRepeatRule({ kind: 'weekly', weekdays: repeatDays, startDate: new Date().toISOString().slice(0, 10) })}>每周</button>
           {repeatRule?.kind === 'weekly' && <div className="weekday-list">{['日', '一', '二', '三', '四', '五', '六'].map((label, index) => <button className={repeatDays.includes(index) ? 'day active' : 'day'} type="button" key={label} onClick={() => toggleRepeatDay(index)}>{label}</button>)}</div>}
           {repeatRule && <button className="secondary-button" type="button" onClick={saveRepeat}>保存重复规则</button>}
-          {editingTask.templateId && <button className="link-button" type="button" onClick={() => stopRepeat(editingTask)}>暂停重复</button>}
+          {editingTask.templateId && !editingTemplate?.paused && <button className="link-button" type="button" onClick={() => stopRepeat(editingTask)}>暂停重复</button>}
+          {editingTask.templateId && editingTemplate?.paused && <button className="link-button" type="button" onClick={() => resumeRepeat(editingTask)}>恢复重复</button>}
+          {editingTask.templateId && <button className="link-button" type="button" onClick={() => deleteRepeat(editingTask)}>不再重复</button>}
         </div>
         {editError && <p className="error-text">{editError}</p>}
         <button className="add-button save-edit" type="button" onClick={saveEdit}>保存修改</button>
       </section>}
 
-      {settingsOpen && <section className="edit-card settings-card" aria-label="数据设置">
-        <div className="edit-heading"><p className="label">数据</p><button className="link-button" type="button" onClick={() => setSettingsOpen(false)}>收起</button></div>
-        <p className="settings-copy">任务只保存在这台设备的浏览器里。没有账号，也不会自动上传。导入时，相同任务会保留更新时间较新的一份。</p>
-        <div className="theme-picker"><p className="label">视觉皮肤</p>{themeIds.map((id) => { const option = getTheme(id); return <button className={`theme-option ${themeId === id ? 'selected' : ''}`} type="button" key={id} onClick={() => setThemeId(id)}><span className="theme-swatch" style={{ background: option.tokens.background, borderColor: option.tokens.accent }} /><span><strong>{option.name}</strong><small>{option.description}</small></span></button> })}</div>
-        <input ref={importInputRef} className="file-input" type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) importData(file); event.currentTarget.value = '' }} />
-        <div className="settings-actions"><button className="secondary-button" type="button" onClick={exportData}>导出数据</button><button className="secondary-button" type="button" onClick={() => importInputRef.current?.click()}>导入数据</button><button className="danger-button" type="button" onClick={deleteAllData}>删除全部数据</button></div>
-        {importNotice && <p className="import-notice">{importNotice}</p>}
-      </section>}
+      <section className="edit-card ai-card" aria-label="AI 建议顺序">
+        <div className="edit-heading"><p className="label">AI 建议 · 可选</p>{aiState === 'ready' && <button className="link-button" type="button" onClick={dismissAiAdvice}>收起</button>}</div>
+        {aiState === 'idle' && <><p className="settings-copy">让 AI 给今天的任务排个顺序。它只提建议，不会自动改变时间线。</p><button className="secondary-button" type="button" onClick={askAiOrder}>查看建议顺序</button></>}
+        {aiState === 'loading' && <p className="detail-empty">正在整理顺序……</p>}
+        {aiState === 'error' && <p className="error-text">{aiReason}</p>}
+        {aiState === 'ready' && <><p className="detail-empty">{aiReason}</p><p className="ai-order">{aiOrder.map((id) => tasks.find((task) => task.id === id)?.title).filter(Boolean).join(' → ')}</p><small>这只是建议，不会自动改变时间线。</small></>}
+      </section>
 
       <section className="quiet-note"><span className="note-mark">✦</span><p>排不下的时候，我会告诉你原因。<br />不会偷偷吃掉你的休息。</p></section>
       <footer><span>本地保存 · 不需要账号</span><button className="link-button" type="button" onClick={() => setShowAll(true)}>查看全部任务</button></footer>
@@ -435,13 +654,14 @@ function App() {
             <p className="label">为什么在这里</p>
             <ul className="detail-list"><li>{selectedTask.importance === 'must' ? '你标记了今天需要完成' : '按当前可用时间安排'}</li><li>{selectedTask.targetDurationMinutes ? `预计需要 ${selectedTask.targetDurationMinutes} 分钟` : '需要先补充预计时间'}</li>{selectedBlock?.source === 'manualLock' && <li>这是你手动锁定的时间</li>}</ul>
             <button className="edit-button" type="button" onClick={() => openEditor(selectedTask)}>编辑这件事</button>
-            <div className="focus-panel"><p className="label">专注</p>{focusSession?.taskId === selectedTask.id ? <><p className="focus-timer">{Math.floor(focusRemainingSeconds(focusSession, new Date().toISOString()) / 60).toString().padStart(2, '0')}:{(focusRemainingSeconds(focusSession, new Date().toISOString()) % 60).toString().padStart(2, '0')}</p><button className="secondary-button" type="button" onClick={toggleFocus}>{focusSession.state === 'running' ? '暂停' : '继续'}</button><button className="link-button" type="button" onClick={endFocus}>结束专注</button></> : <button className="secondary-button" type="button" onClick={() => startFocusFor(selectedTask)}>开始专注</button>}</div>
-            <div className="ai-advice"><p className="label">AI 建议 · 可选</p>{aiState === 'idle' && <button className="secondary-button" type="button" onClick={askAiOrder}>查看建议顺序</button>}{aiState === 'loading' && <p className="detail-empty">正在整理顺序……</p>}{aiState === 'error' && <p className="error-text">{aiReason}</p>}{aiState === 'ready' && <><p className="detail-empty">{aiReason}</p><p className="ai-order">{aiOrder.map((id) => tasks.find((task) => task.id === id)?.title).filter(Boolean).join(' → ')}</p><small>这只是建议，不会自动改变时间线。</small></>}</div>
+            <div className="focus-panel"><p className="label">专注</p>{focusSession?.taskId === selectedTask.id ? <><p className="focus-timer">{formatFocusRemaining(focusSession)}</p><button className="secondary-button" type="button" onClick={toggleFocus}>{focusSession.state === 'running' ? '暂停' : '继续'}</button><button className="link-button" type="button" onClick={endFocus}>结束专注</button></> : <button className="secondary-button" type="button" onClick={() => startFocusFor(selectedTask)}>开始专注</button>}</div>
           </> : <p className="detail-empty">选择一件事，查看它为什么出现在这里。</p>}
         </aside>
       </div>
     </main>
+    </>
   )
 }
 
 createRoot(document.getElementById('root')!).render(<App />)
+

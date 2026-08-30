@@ -4,8 +4,8 @@
   "description": "一个不责备你、但帮你重新开始的今日时间线。",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#f5efe6",
-  "theme_color": "#f5efe6",
+  "background_color": "#CAC8B7",
+  "theme_color": "#CAC8B7",
   "lang": "zh-CN",
   "icons": [
     { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
