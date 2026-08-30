@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import type { ExistingPlanBlock, Importance, PlannerTask, StoredTask, TaskDraft, RecurrenceRule, RecurringTemplate, ThemeId } from '../../../packages/core/src'
+import type { ExistingPlanBlock, Importance, PlannerFixedBlock, PlannerTask, StoredTask, TaskDraft, RecurrenceRule, RecurringTemplate, ThemeId } from '../../../packages/core/src'
 import { buildExport, buildTimelineEntries, completedThisWeek, createTask, createTemplate, defaultTheme, deleteTask, editTask, getTheme, materializeOccurrences, mergeImportedTasks, parseImport, pinTask, replanToday, selectCarryoverTasks, weekKey, completeTask, uncompleteTask, unpinTask, themeIds } from '../../../packages/core/src'
 import type { FocusSession } from '../../../packages/core/src/focus'
 import { focusRemainingSeconds, pauseFocus, resumeFocus, startFocus } from '../../../packages/core/src/focus'
@@ -20,6 +20,7 @@ const BG_KEY = 'lifeflow-web-bg-v1'
 const PLANNER_KEY = 'lifeflow-web-planner-v1'
 const CARRYOVER_KEY = 'lifeflow-web-carryover-v1'
 const REVIEW_KEY = 'lifeflow-web-review-v1'
+const BLOCKS_KEY = 'lifeflow-web-blocks-v1'
 
 const initialNow = new Date().toISOString()
 const initialTasks: LocalTask[] = [
@@ -122,6 +123,22 @@ function loadBackground(): BackgroundConfig {
   }
 }
 
+function loadBlocks(): PlannerFixedBlock[] {
+  try {
+    const raw = localStorage.getItem(BLOCKS_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as PlannerFixedBlock[]
+    return Array.isArray(parsed) ? parsed.filter((block) => typeof block.id === 'string' && typeof block.startAt === 'string' && typeof block.endAt === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function ruleText(rule: RecurrenceRule): string {
+  if (rule.kind === 'daily') return '每天'
+  return '每周 ' + (rule.weekdays ?? []).map((day) => '日一二三四五六'[day]).join('、')
+}
+
 function readImageFile(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -170,8 +187,7 @@ function validTime(value: unknown): string | null {
   return typeof value === 'string' && /^([01]\d|2[0-3]):([0-5]\d)$/.test(value) ? value : null
 }
 
-function loadPlannerConfig(): PlannerConfig {
-  try {
+function loadPlannerConfig(): PlannerConfig {  try {
     const raw = localStorage.getItem(PLANNER_KEY)
     if (!raw) return DEFAULT_PLANNER
     const parsed = JSON.parse(raw) as Partial<PlannerConfig>
@@ -203,10 +219,11 @@ function App() {
   const [editNotes, setEditNotes] = useState('')
   const [editError, setEditError] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [settingsSection, setSettingsSection] = useState<'appearance' | 'planning' | 'data' | 'ai' | 'about'>('appearance')
-  const settingsItems: Array<{ id: 'appearance' | 'planning' | 'data' | 'ai' | 'about'; label: string }> = [
+  const [settingsSection, setSettingsSection] = useState<'appearance' | 'planning' | 'repeat' | 'data' | 'ai' | 'about'>('appearance')
+  const settingsItems: Array<{ id: 'appearance' | 'planning' | 'repeat' | 'data' | 'ai' | 'about'; label: string }> = [
     { id: 'appearance', label: '外观' },
     { id: 'planning', label: '计划' },
+    { id: 'repeat', label: '重复' },
     { id: 'data', label: '数据' },
     { id: 'ai', label: 'AI 与服务' },
     { id: 'about', label: '关于 LifeFlow' },
@@ -245,6 +262,16 @@ function App() {
   const [carryoverReviewed, setCarryoverReviewed] = useState(() => localStorage.getItem(CARRYOVER_KEY))
   const [carryoverKeeps, setCarryoverKeeps] = useState<Record<string, boolean>>({})
   const [reviewShown, setReviewShown] = useState(() => localStorage.getItem(REVIEW_KEY))
+  const [blocks, setBlocks] = useState<PlannerFixedBlock[]>(loadBlocks)
+  const [blocksOpen, setBlocksOpen] = useState(false)
+  const [blockTitle, setBlockTitle] = useState('')
+  const [blockStart, setBlockStart] = useState('09:00')
+  const [blockEnd, setBlockEnd] = useState('10:00')
+  const [blockError, setBlockError] = useState('')
+
+  useEffect(() => {
+    localStorage.setItem(BLOCKS_KEY, JSON.stringify(blocks))
+  }, [blocks])
   const [editImportance, setEditImportance] = useState<Importance>('important')
   const [editSplittable, setEditSplittable] = useState(false)
   const [editDeadline, setEditDeadline] = useState('')
@@ -388,9 +415,9 @@ function App() {
       availabilityStartLocalTime: plannerConfig.start, availabilityEndLocalTime: plannerConfig.end, dailyBufferMinutes: plannerConfig.bufferMinutes,
       rest: { enabled: plannerConfig.restEnabled, startLocalTime: plannerConfig.restStart, endLocalTime: plannerConfig.restEnd },
     },
-    tasks: tasks.filter((task) => !task.done), fixedBlocks: [],
+    tasks: tasks.filter((task) => !task.done), fixedBlocks: blocks,
     preferredOrder: preferredOrder ?? undefined,
-  }), [tasks, now, preferredOrder, plannerConfig])
+  }), [tasks, now, preferredOrder, plannerConfig, blocks])
 
   const plan = useMemo(() => replanToday({ ...plannerInput, existingBlocks }), [plannerInput, existingBlocks])
   useEffect(() => {
@@ -409,6 +436,7 @@ function App() {
   const todayStr = localDate(now)
   const tomorrowStr = localDate(new Date(Date.parse(now) + 86400000).toISOString())
   const tomorrowTasks = tasks.filter((task) => !task.done && task.deferredUntil !== undefined && task.deferredUntil > todayStr)
+  const timelineRows = [...timelineEntries, ...blocks.filter((block) => localDate(block.startAt) === todayStr).map((block) => ({ kind: 'block' as const, title: block.title, startAt: block.startAt, endAt: block.endAt }))].sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt))
   const carryoverItems = carryoverReviewed === todayStr ? [] : selectCarryoverTasks(tasks, todayStr)
   const weekReview = completedThisWeek(tasks, now)
   const reviewDue = reviewShown !== weekKey(now) && weekReview.length > 0
@@ -615,6 +643,20 @@ function App() {
     setPlannerConfig((current) => ({ ...current, ...patch }))
   }
 
+  function addBlock() {
+    const cleanTitle = blockTitle.trim()
+    if (!cleanTitle) { setBlockError('给这段日程起个名字。'); return }
+    const start = /^([01]\d|2[0-3]):[0-5]\d$/.test(blockStart) ? blockStart : null
+    const end = /^([01]\d|2[0-3]):[0-5]\d$/.test(blockEnd) ? blockEnd : null
+    if (!start || !end) { setBlockError('开始和结束都要填时间。'); return }
+    const day = localDate(now)
+    const startAt = new Date(`${day}T${start}:00`).toISOString()
+    const endAt = new Date(`${day}T${end}:00`).toISOString()
+    if (Date.parse(endAt) <= Date.parse(startAt)) { setBlockError('结束要比开始晚。'); return }
+    setBlocks((current) => [...current, { id: crypto.randomUUID(), title: cleanTitle, startAt, endAt, strength: 'hard', movable: false }])
+    setBlockTitle(''); setBlockError('')
+  }
+
   function removeBackgroundImage() {
     setBackground(DEFAULT_BG)
     setCropOpen(false)
@@ -653,7 +695,7 @@ function App() {
 
   function deleteAllData() {
     if (!window.confirm('确定删除 LifeFlow 保存的全部本地数据吗？此操作不可撤销。')) return
-    for (const key of [STORAGE_KEY, PLAN_KEY, TEMPLATE_KEY, FOCUS_KEY, THEME_KEY, API_CONFIG_KEY, BG_KEY, PLANNER_KEY]) localStorage.removeItem(key)
+    for (const key of [STORAGE_KEY, PLAN_KEY, TEMPLATE_KEY, FOCUS_KEY, THEME_KEY, API_CONFIG_KEY, BG_KEY, PLANNER_KEY, CARRYOVER_KEY, REVIEW_KEY, BLOCKS_KEY]) localStorage.removeItem(key)
     setTasks([])
     setExistingBlocks([])
     setTemplates([])
@@ -669,6 +711,7 @@ function App() {
     setCropOpen(false)
     setPlannerConfig(DEFAULT_PLANNER)
     setPreferredOrder(null)
+    setBlocks([])
     setSettingsOpen(false)
   }
 
@@ -758,6 +801,7 @@ function App() {
         <div className="settings-content">
           {settingsSection === 'appearance' && <section className="settings-section" aria-label="外观设置"><p className="label">APPEARANCE / 外观</p><h2>视觉皮肤</h2><p className="settings-copy">皮肤只改变表现方式，不改变任务、计划规则或数据归属。</p><div className="theme-picker">{themeIds.map((id) => { const option = getTheme(id); return <button className={`theme-option ${themeId === id ? 'selected' : ''}`} type="button" key={id} onClick={() => setThemeId(id)}><span className="theme-swatch" style={{ background: option.tokens.background, borderColor: option.tokens.accent }} /><span><strong>{option.name}</strong><small>{option.description}</small></span></button> })}</div><div className="bg-picker"><p className="label">背景图</p><p className="settings-copy">用一张自己的图片做页面背景。上传后拖动裁剪框决定画面，缩放滑杆控制取景范围；模糊和遮罩帮文字保持可读。它只影响外观，不影响任务数据。</p>{background.dataUrl && <div className="bg-preview" style={{ backgroundImage: `url(${background.dataUrl})` }} aria-hidden="true" />}<input ref={bgInputRef} className="file-input" type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) handleBackgroundFile(file); event.currentTarget.value = '' }} /><div className="settings-actions"><button className="secondary-button" type="button" onClick={() => bgInputRef.current?.click()}>选择图片</button>{background.dataUrl && <button className="secondary-button" type="button" onClick={() => setCropOpen(true)}>裁剪画面</button>}{background.dataUrl && <button className="secondary-button" type="button" onClick={resetBackgroundParams}>恢复默认参数</button>}{background.dataUrl && <button className="secondary-button" type="button" onClick={removeBackgroundImage}>移除背景图</button>}</div>{cropOpen && background.dataUrl && <CropEditor dataUrl={background.dataUrl} aspect={window.innerWidth / window.innerHeight} onApply={(cropped) => { setBackground((current) => ({ ...current, dataUrl: cropped })); setCropOpen(false) }} onCancel={() => setCropOpen(false)} />}{background.dataUrl && !cropOpen && <div className="bg-controls"><label>模糊<input type="range" min={0} max={24} value={background.blur} onChange={(event) => updateBackground({ blur: Number(event.target.value) })} /><span>{background.blur}px</span></label><label>遮罩<input type="range" min={0} max={85} value={background.dim} onChange={(event) => updateBackground({ dim: Number(event.target.value) })} /><span>{background.dim}%</span></label><label>饱和度<input type="range" min={0} max={200} value={background.saturate} onChange={(event) => updateBackground({ saturate: Number(event.target.value) })} /><span>{background.saturate}%</span></label></div>}{bgNotice && <p className="import-notice">{bgNotice}</p>}</div></section>}
           {settingsSection === 'planning' && <section className="settings-section" aria-label="计划设置"><p className="label">PLANNING / 计划</p><h2>今天的时间</h2><p className="settings-copy">下面的默认值只是示例，按你的现实来改。排程用这里的时间决定可用窗口、缓冲和休息；AI 也会参考它。</p><div className="planner-form"><label>可用时段从<input type="time" value={plannerConfig.start} onChange={(event) => { if (validTime(event.target.value)) updatePlanner({ start: event.target.value }) }} />到<input type="time" value={plannerConfig.end} onChange={(event) => { if (validTime(event.target.value)) updatePlanner({ end: event.target.value }) }} /></label><label>每日缓冲<input type="number" min={0} max={300} value={plannerConfig.bufferMinutes} onChange={(event) => updatePlanner({ bufferMinutes: Number(event.target.value) })} /><span>分钟</span></label><label className="checkbox-line"><input type="checkbox" checked={plannerConfig.restEnabled} onChange={(event) => updatePlanner({ restEnabled: event.target.checked })} />保护休息时段</label>{plannerConfig.restEnabled && <label>休息从<input type="time" value={plannerConfig.restStart} onChange={(event) => { if (validTime(event.target.value)) updatePlanner({ restStart: event.target.value }) }} />到<input type="time" value={plannerConfig.restEnd} onChange={(event) => { if (validTime(event.target.value)) updatePlanner({ restEnd: event.target.value }) }} /></label>}</div></section>}
+          {settingsSection === 'repeat' && <section className="settings-section" aria-label="重复任务设置"><p className="label">REPEAT / 重复</p><h2>重复任务</h2><p className="settings-copy">暂停的模板不再生成新任务，随时恢复；删除模板不影响已经生成的任务。</p>{templates.length === 0 && <p className="settings-copy">还没有重复任务。在编辑或添加任务时选择"每天"或"每周"就能创建。</p>}{templates.map((template) => <div className="template-row" key={template.id}><span className="template-title">{template.title}{template.paused && <small>已暂停</small>}</span><small className="template-rule">{ruleText(template.rule)}</small><span className="decision-actions">{template.paused ? <button className="link-button" type="button" onClick={() => setTemplates((current) => current.map((item) => item.id === template.id ? { ...item, paused: false } : item))}>恢复</button> : <button className="link-button" type="button" onClick={() => setTemplates((current) => current.map((item) => item.id === template.id ? { ...item, paused: true } : item))}>暂停</button>}<button className="link-button" type="button" onClick={() => { if (window.confirm('删除这条重复规则？已生成的任务会保留。')) setTemplates((current) => current.filter((item) => item.id !== template.id)) }}>删除</button></span></div>)}</section>}
           {settingsSection === 'data' && <section className="settings-section" aria-label="数据设置"><p className="label">DATA / 数据</p><h2>本地数据</h2><p className="settings-copy">任务保存在这台设备的浏览器里。没有账号，也不会自动上传。导入时，相同任务会保留更新时间较新的一份。</p><input ref={importInputRef} className="file-input" type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) importData(file); event.currentTarget.value = '' }} /><div className="settings-actions"><button className="secondary-button" type="button" onClick={exportData}>导出数据</button><button className="secondary-button" type="button" onClick={() => importInputRef.current?.click()}>导入数据</button><button className="danger-button" type="button" onClick={deleteAllData}>删除全部数据</button></div>{importNotice && <p className="import-notice">{importNotice}</p>}</section>}
           {settingsSection === 'ai' && <section className="settings-section" aria-label="AI 与服务设置"><p className="label">AI / AI 与服务</p><h2>AI 顾问</h2><p className="settings-copy">AI 建议会在你明确请求时使用。它只能提供顺序建议，不能替代本地 Planner，也不会自动修改你的计划。</p><p className="settings-copy">也可以接入自己的后端：只要提供 GET /health 和 POST /v1/ai/order（返回的顺序必须恰好包含每个任务 id 一次，并附一句理由），LifeFlow 就把请求发到你的服务。</p><div className="api-field"><p className="label">服务地址</p><input value={apiDraft} onChange={(event) => setApiDraft(event.target.value)} placeholder={API_URL} aria-label="后端服务地址" /></div><div className="settings-actions"><button className="secondary-button" type="button" onClick={saveApiConfig}>保存</button><button className="secondary-button" type="button" onClick={testApiConnection} disabled={apiTesting}>测试连接</button></div>{apiNotice && <p className="import-notice" style={{ color: apiNoticeTone === 'ok' ? 'var(--success)' : apiNoticeTone === 'fail' ? 'var(--error)' : undefined }}>{apiNotice}</p>}</section>}
           {settingsSection === 'about' && <section className="settings-section settings-placeholder" aria-label="关于 LifeFlow"><p className="label">ABOUT / 关于</p><h2>LifeFlow</h2><p className="settings-copy">一个帮助你重新进入生活的现实型时间规划工具。</p><span className="muted">本地优先 · 无需登录 · 计划可解释</span></section>}
@@ -809,7 +853,8 @@ function App() {
         </div>
         <div className="timeline">
           {visibleTasks.length === 0 && <p className="empty">还没有安排。把现实中的事情写在下面。</p>}
-          {timelineEntries.map((entry) => {
+          {timelineRows.map((entry) => {
+            if (entry.kind === 'block') return <div className="special-row block" key={`block-${entry.startAt}-${entry.title}`}><span className="row-time">{new Date(entry.startAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span><span className="row-rail" aria-hidden="true"><i className="rail-dot is-block" /></span><span className="special-copy"><span>{entry.title}</span><small>固定日程，任务不会排进来</small></span></div>
             if (entry.kind !== 'task') return <div className={`special-row ${entry.kind}`} key={`${entry.kind}-${entry.startAt}`}><span className="row-time">{new Date(entry.startAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span><span className="row-rail" aria-hidden="true"><i className="rail-dot" /></span><span className="special-copy"><span>{entry.title}</span><small>{entry.kind === 'buffer' ? '为变化留出空间' : '这段时间本身就是计划的一部分'}</small></span></div>
             const task = tasks.find((candidate) => candidate.id === entry.taskId)
             if (!task) return null
@@ -846,6 +891,15 @@ function App() {
       </section>
       {voiceError && <p className="voice-error">{voiceError === 'not-allowed' ? '需要麦克风权限才能听写。' : voiceError === 'network' ? '语音服务暂时不可用，检查网络后重试。' : '没听清，再试一次。'}</p>}
       {!createOpen && <button className="link-button expand-toggle" type="button" onClick={() => setCreateOpen(true)}>展开详细设置，顺便定好重要性和时间 ▾</button>}
+      {!blocksOpen && <button className="link-button expand-toggle" type="button" onClick={() => setBlocksOpen(true)}>加一段固定日程（会议、课程这类挪不动的时间） ▾</button>}
+      {blocksOpen && <section className="edit-card create-card" aria-label="固定日程">
+        <div className="edit-heading"><p className="label">固定日程</p><button className="link-button" type="button" onClick={() => setBlocksOpen(false)}>收起</button></div>
+        <p className="settings-copy">会议、课程这类挪不动的时间。排程会把它们挖掉，任务不会排进这些时段。</p>
+        <div className="edit-grid"><input value={blockTitle} onChange={(event) => setBlockTitle(event.target.value)} placeholder="标题，比如：组会" aria-label="日程标题" /><div className="block-times"><input type="time" value={blockStart} onChange={(event) => setBlockStart(event.target.value)} aria-label="日程开始" /><input type="time" value={blockEnd} onChange={(event) => setBlockEnd(event.target.value)} aria-label="日程结束" /></div></div>
+        {blockError && <p className="error-text">{blockError}</p>}
+        <div className="settings-actions"><button className="add-button" type="button" onClick={addBlock}>添加日程</button></div>
+        {blocks.filter((block) => localDate(block.startAt) === todayStr).map((block) => <div className="deferred-row" key={block.id}><span>{block.title}</span><span className="decision-actions"><small>{new Date(block.startAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} — {new Date(block.endAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</small><button className="link-button" type="button" onClick={() => setBlocks((current) => current.filter((item) => item.id !== block.id))}>删除</button></span></div>)}
+      </section>}
       {createOpen && <section className="edit-card create-card" aria-label="新任务详细设置">
         <div className="edit-heading"><p className="label">新任务 · 详细设置</p><button className="link-button" type="button" onClick={resetCreate}>收起</button></div>
         <div className="repeat-panel"><span className="edit-hint">重要性</span>{([['must', '必须做'], ['important', '重要'], ['want', '想做']] as Array<[Importance, string]>).map(([value, label]) => <button className={createImportance === value ? 'choice active' : 'choice'} type="button" key={value} onClick={() => setCreateImportance(value)}>{label}</button>)}</div>

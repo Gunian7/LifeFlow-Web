@@ -9,10 +9,16 @@
     <title>LifeFlow</title>
   </head>
   <body>
+    <script>
+      window.__errs = []
+      window.addEventListener('error', function (e) { window.__errs.push((e.target && e.target.src ? 'RES ' + e.target.src : 'ERR ' + e.message) + ' @' + (e.filename || '') + ':' + (e.lineno || 0)) }, true)
+    </script>
     <div id="root"></div>
     <script type="module" src="./apps/web/src/main.tsx"></script>
     <script>
-      if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js')
+      // The PWA shell cache would capture Vite's HMR modules on a dev server,
+      // so only register the service worker outside local development.
+      if ('serviceWorker' in navigator && !location.hostname.match(/^(localhost|127\.0\.0\.1)$/)) navigator.serviceWorker.register('./sw.js')
     </script>
   </body>
 </html>

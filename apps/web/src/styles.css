@@ -109,6 +109,13 @@ html.custom-bg-on body[data-theme='archive-terminal'] { background-image: none; 
 .review-card h2 { margin-bottom: 6px; }
 .review-list { margin: 12px 0 16px; padding-left: 18px; color: var(--secondary); font-size: 13px; line-height: 2; }
 .review-card .secondary-button { min-width: 72px; }
+.template-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 0; border-bottom: 1px dashed var(--line); }
+.template-title { font-size: 13px; }
+.template-title small { margin-left: 8px; color: var(--warning); font-size: 11px; }
+.template-rule { color: var(--tertiary); font-size: 12px; }
+.special-row.block { color: var(--info); }
+.rail-dot.is-block { border-color: var(--info); background: color-mix(in srgb, var(--info) 25%, var(--bg)); }
+.block-times { display: flex; gap: 8px; align-items: center; }
 button, input, textarea { font: inherit; }
 button { cursor: pointer; }
 
