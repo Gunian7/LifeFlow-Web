@@ -5,11 +5,16 @@ import { buildExport, buildTimelineEntries, completedThisWeek, createTask, creat
 import type { FocusSession } from '../../../packages/core/src/focus'
 import { focusRemainingSeconds, pauseFocus, resumeFocus, startFocus } from '../../../packages/core/src/focus'
 import { CropEditor } from './CropEditor'
+import { AiCard } from './components/AiCard'
+import { BlocksCard } from './components/BlocksCard'
+import { CaptureCard } from './components/CaptureCard'
+import { EditCard } from './components/EditCard'
 import { FocusView } from './components/FocusView'
 import { Header } from './components/Header'
 import { CarryoverCard } from './components/CarryoverCard'
 import { ReviewCard } from './components/ReviewCard'
 import { DetailPanel } from './components/DetailPanel'
+import { Timeline } from './components/Timeline'
 import { SettingsPage } from './components/SettingsPage'
 import type { SettingsSection } from './components/SettingsPage'
 import { localDate, reasonText, toLocalInput } from './format'
@@ -211,15 +216,8 @@ function App() {
   const [tasks, setTasks] = useState<LocalTask[]>(loadTasks)
   const [existingBlocks, setExistingBlocks] = useState<ExistingPlanBlock[]>(loadPlan)
   const [templates, setTemplates] = useState<RecurringTemplate[]>(loadTemplates)
-  const [title, setTitle] = useState('')
-  const [minutes, setMinutes] = useState('30')
   const [showAll, setShowAll] = useState(false)
   const [editingTask, setEditingTask] = useState<LocalTask | null>(null)
-  const [editTitle, setEditTitle] = useState('')
-  const [editMinutes, setEditMinutes] = useState('')
-  const [editPlace, setEditPlace] = useState('')
-  const [editNotes, setEditNotes] = useState('')
-  const [editError, setEditError] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('appearance')
   const [themeId, setThemeId] = useState<ThemeId>(() => getTheme(localStorage.getItem(THEME_KEY) ?? undefined).id)
@@ -228,13 +226,9 @@ function App() {
   const importInputRef = useRef<HTMLInputElement | null>(null)
   const [repeatRule, setRepeatRule] = useState<RecurrenceRule | null>(null)
   const [repeatDays, setRepeatDays] = useState<number[]>([])
-  const [pinTime, setPinTime] = useState('')
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   const [focusSession, setFocusSession] = useState<FocusSession | null>(loadFocus)
   const [focusTick, setFocusTick] = useState(0)
-  const [aiState, setAiState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
-  const [aiReason, setAiReason] = useState('')
-  const [aiOrder, setAiOrder] = useState<string[]>([])
   const [now, setNow] = useState(() => new Date().toISOString())
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date().toISOString()), 60000)
@@ -258,87 +252,40 @@ function App() {
   const [reviewShown, setReviewShown] = useState(() => localStorage.getItem(REVIEW_KEY))
   const [blocks, setBlocks] = useState<PlannerFixedBlock[]>(loadBlocks)
   const [blocksOpen, setBlocksOpen] = useState(false)
-  const [blockTitle, setBlockTitle] = useState('')
-  const [blockStart, setBlockStart] = useState('09:00')
-  const [blockEnd, setBlockEnd] = useState('10:00')
-  const [blockError, setBlockError] = useState('')
 
   useEffect(() => {
     localStorage.setItem(BLOCKS_KEY, JSON.stringify(blocks))
   }, [blocks])
-  const [editImportance, setEditImportance] = useState<Importance>('important')
-  const [editSplittable, setEditSplittable] = useState(false)
-  const [editDeadline, setEditDeadline] = useState('')
-  const [voiceSupported] = useState(speechSupported)
-  const voiceBaseRef = useRef('')
-  const handleVoiceText = useCallback((chunk: string, finalText: string) => {
-    setTitle(voiceBaseRef.current + finalText + chunk)
-  }, [])
-  const { listening: voiceListening, error: voiceError, start: startVoice, stop: stopVoice } = useSpeechRecognition(handleVoiceText)
 
-  function toggleVoice() {
-    if (voiceListening) { stopVoice(); return }
-    voiceBaseRef.current = title
-    startVoice()
-  }
-
-  const [createOpen, setCreateOpen] = useState(false)
-  const [createImportance, setCreateImportance] = useState<Importance>('important')
-  const [createSplittable, setCreateSplittable] = useState(false)
-  const [createDeadline, setCreateDeadline] = useState('')
-  const [createPlace, setCreatePlace] = useState('')
-  const [createNotes, setCreateNotes] = useState('')
-  const [createPinTime, setCreatePinTime] = useState('')
-  const [createRepeatRule, setCreateRepeatRule] = useState<RecurrenceRule | null>(null)
-  const [createRepeatDays, setCreateRepeatDays] = useState<number[]>([])
-  const [createError, setCreateError] = useState('')
-
-  function resetCreate() {
-    setCreateOpen(false)
-    setCreateImportance('important')
-    setCreatePlace('')
-    setCreateNotes('')
-    setCreatePinTime('')
-    setCreateError('')
-    setCreateRepeatRule(null)
-    setCreateRepeatDays([])
-  }
-
-  function addTaskDetailed() {
-    const cleanTitle = title.trim()
-    if (!cleanTitle) { setCreateError('先给它起个名字。'); return }
-    if (createRepeatRule?.kind === 'weekly' && createRepeatDays.length === 0) { setCreateError('每周重复至少选一天。'); return }
-    const parsed = Number.parseInt(minutes, 10)
-    const draft: TaskDraft = {
-      title: cleanTitle,
-      importance: createImportance,
-      splittable: createSplittable,
-      deadlineAt: createDeadline ? new Date(createDeadline).toISOString() : undefined,
-      place: createPlace || undefined,
-      notes: createNotes || undefined,
-      targetDurationMinutes: Number.isInteger(parsed) && parsed > 0 ? parsed : undefined,
-    }
+  function handleQuickAdd(quickTitle: string, quickMinutes: number | undefined) {
+    if (!quickTitle) return
+    const draft: TaskDraft = { title: quickTitle, importance: 'important', splittable: false, targetDurationMinutes: quickMinutes }
     const created = createTask(draft, new Date().toISOString(), crypto.randomUUID())
-    if (!created.task) return
-    let task = created.task
-    if (createPinTime) {
-      const pinned = pinTask(task, createPinTime, localDate(new Date().toISOString()), 'Asia/Shanghai', new Date().toISOString())
-      if (!pinned.task) { setCreateError('这个时间已经过去了，或者时长还没填。'); return }
-      task = pinned.task
-    }
-    if (createRepeatRule) {
-      const rule: RecurrenceRule = { kind: createRepeatRule.kind, weekdays: createRepeatRule.kind === 'weekly' ? createRepeatDays : undefined, startDate: localDate(new Date().toISOString()) }
-      const template = createTemplate(crypto.randomUUID(), cleanTitle, rule, new Date().toISOString())
-      template.importance = createImportance
-      template.targetDurationMinutes = draft.targetDurationMinutes
-      template.place = draft.place
-      template.notes = draft.notes
+    if (created.task) setTasks((current) => [...current, created.task!])
+  }
+
+  function handleDetailedAdd(task: StoredTask, repeat: RecurrenceRule | null) {
+    let finalTask = task
+    if (repeat) {
+      const template = createTemplate(crypto.randomUUID(), task.title, repeat, new Date().toISOString())
+      template.importance = task.importance
+      template.targetDurationMinutes = task.targetDurationMinutes
+      template.place = task.place
+      template.notes = task.notes
       setTemplates((current) => [...current, template])
-      task = { ...task, templateId: template.id, occurrenceDate: rule.startDate }
+      finalTask = { ...task, templateId: template.id, occurrenceDate: repeat.startDate }
     }
-    setTasks((current) => [...current, task])
-    setTitle(''); setMinutes('30')
-    resetCreate()
+    setTasks((current) => [...current, finalTask])
+  }
+
+  function setRepeatForTask(task: LocalTask, rule: RecurrenceRule) {
+    const template = createTemplate(crypto.randomUUID(), task.title, rule, new Date().toISOString())
+    template.importance = task.importance
+    template.targetDurationMinutes = task.targetDurationMinutes
+    template.place = task.place
+    template.notes = task.notes
+    setTemplates((current) => [...current, template])
+    setTasks((current) => current.map((item) => item.id === task.id ? { ...item, templateId: template.id, occurrenceDate: rule.startDate } : item))
   }
 
   useEffect(() => {
@@ -461,23 +408,6 @@ function App() {
     setTasks((current) => current.map((task) => task.id === id ? { ...task, ...patch, updatedAt: new Date().toISOString() } : task))
   }
 
-  function addTask() {
-    const cleanTitle = title.trim()
-    if (!cleanTitle) return
-    const parsed = Number.parseInt(minutes, 10)
-    const draft: TaskDraft = {
-      title: cleanTitle,
-      importance: 'important',
-      splittable: false,
-      targetDurationMinutes: Number.isInteger(parsed) && parsed > 0 ? parsed : undefined,
-    }
-    const created = createTask(draft, new Date().toISOString(), crypto.randomUUID())
-    if (!created.task) return
-    setTasks((current) => [...current, created.task!])
-    setTitle('')
-    setMinutes('30')
-  }
-
   function toggleTask(id: string) {
     setTasks((current) => current.map((task) => task.id === id
       ? (task.done ? uncompleteTask(task, new Date().toISOString()) : completeTask(task, new Date().toISOString()))
@@ -499,47 +429,7 @@ function App() {
 
   function openEditor(task: LocalTask) {
     setEditingTask(task)
-    setEditTitle(task.title)
-    setEditMinutes(task.targetDurationMinutes?.toString() ?? '')
-    setEditPlace(task.place ?? '')
-    setEditNotes(task.notes ?? '')
-    setEditError('')
-    setEditImportance(task.importance)
-    setEditSplittable(task.splittable)
-    setEditDeadline(toLocalInput(task.deadlineAt))
-    setPinTime(task.lockedStartAt ? new Date(task.lockedStartAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '')
-    setRepeatRule(null)
-    setRepeatDays([])
-  }
-
-  function saveEdit() {
-    if (!editingTask) return
-    const rawMinutes = editMinutes.trim()
-    const parsed = Number.parseInt(rawMinutes, 10)
-    const draft: TaskDraft = {
-      title: editTitle,
-      importance: editImportance,
-      splittable: editSplittable,
-      deadlineAt: editDeadline ? new Date(editDeadline).toISOString() : undefined,
-      place: editPlace,
-      notes: editNotes,
-      targetDurationMinutes: rawMinutes ? parsed : undefined,
-    }
-    const result = editTask(editingTask, draft, new Date().toISOString())
-    if (!result.task) {
-      setEditError(result.issues[0]?.code === 'TITLE_REQUIRED' ? '给它起个名字就好。' : '时间要填正整数，或者留空。')
-      return
-    }
-    let saved = result.task!
-    if (pinTime) {
-      const pinned = pinTask(saved, pinTime, localDate(new Date().toISOString()), 'Asia/Shanghai', new Date().toISOString())
-      if (!pinned.task) { setEditError('这个时间已经过去了，或者时长还没填。'); return }
-      saved = pinned.task
-    } else if (editingTask.lockedStartAt) {
-      saved = unpinTask(saved, new Date().toISOString())
-    }
-    setTasks((current) => current.map((task) => task.id === editingTask.id ? saved : task))
-    setEditingTask(null)
+    setSelectedTaskId(task.id)
   }
 
   function startFocusFor(task: LocalTask) {
@@ -559,25 +449,7 @@ function App() {
     setFocusSession(null)
   }
 
-  async function askAiOrder() {
-    const candidates = tasks.filter((task) => !task.done && task.targetDurationMinutes !== undefined).slice(0, 20).map((task) => ({ id: task.id, title: task.title, durationMinutes: task.targetDurationMinutes!, importance: task.importance }))
-    if (candidates.length === 0) return
-    setAiState('loading'); setAiReason('')
-    try {
-      const response = await fetch(`${apiBaseUrl}/v1/ai/order`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tasks: candidates, context: { now, windowEndLocalTime: plannerConfig.end } }) })
-      const result = await response.json() as { ok?: boolean; order?: string[]; reason?: string }
-      if (!response.ok || !result.ok || !result.order || !result.reason) throw new Error('AI_UNAVAILABLE')
-      setAiOrder(result.order); setAiReason(result.reason); setAiState('ready')
-    } catch {
-      setAiState('error'); setAiReason('AI 暂时不可用，本地计划没有改变。')
-    }
-  }
-
-  function dismissAiAdvice() {
-    setAiState('idle'); setAiOrder([]); setAiReason('')
-  }
-
-  async function saveApiConfig() {
+  function saveApiConfig() {
     const trimmed = apiDraft.trim()
     if (!trimmed) {
       localStorage.removeItem(API_CONFIG_KEY)
@@ -638,20 +510,6 @@ function App() {
     setPlannerConfig((current) => ({ ...current, ...patch }))
   }
 
-  function addBlock() {
-    const cleanTitle = blockTitle.trim()
-    if (!cleanTitle) { setBlockError('给这段日程起个名字。'); return }
-    const start = /^([01]\d|2[0-3]):[0-5]\d$/.test(blockStart) ? blockStart : null
-    const end = /^([01]\d|2[0-3]):[0-5]\d$/.test(blockEnd) ? blockEnd : null
-    if (!start || !end) { setBlockError('开始和结束都要填时间。'); return }
-    const day = localDate(now)
-    const startAt = new Date(`${day}T${start}:00`).toISOString()
-    const endAt = new Date(`${day}T${end}:00`).toISOString()
-    if (Date.parse(endAt) <= Date.parse(startAt)) { setBlockError('结束要比开始晚。'); return }
-    setBlocks((current) => [...current, { id: crypto.randomUUID(), title: cleanTitle, startAt, endAt, strength: 'hard', movable: false }])
-    setBlockTitle(''); setBlockError('')
-  }
-
   function removeBackgroundImage() {
     setBackground(DEFAULT_BG)
     setCropOpen(false)
@@ -697,7 +555,6 @@ function App() {
     setFocusSession(null)
     setThemeId(defaultTheme.id)
     setImportNotice('')
-    setAiState('idle'); setAiOrder([]); setAiReason('')
     setApiBaseUrl(API_URL)
     setApiDraft('')
     setApiNotice('')
@@ -710,35 +567,16 @@ function App() {
     setSettingsOpen(false)
   }
 
-  function toggleRepeatDay(day: number) {
-    setRepeatDays((current) => current.includes(day) ? current.filter((value) => value !== day) : [...current, day])
+  function stopRepeatById(templateId: string) {
+    setTemplates((current) => current.map((item) => item.id === templateId ? { ...item, paused: true } : item))
   }
 
-  function saveRepeat() {
-    if (!editingTask || (repeatRule?.kind === 'weekly' && repeatDays.length === 0)) return
-    const kind = repeatRule?.kind ?? 'daily'
-    const rule: RecurrenceRule = { kind, weekdays: kind === 'weekly' ? repeatDays : undefined, startDate: localDate(new Date().toISOString()) }
-    const template = createTemplate(crypto.randomUUID(), editingTask.title, rule, new Date().toISOString())
-    template.importance = editingTask.importance; template.targetDurationMinutes = editingTask.targetDurationMinutes; template.splittable = editingTask.splittable; template.notes = editingTask.notes; template.place = editingTask.place
-    setTemplates((current) => [...current, template])
-    setTasks((current) => current.map((task) => task.id === editingTask.id ? { ...task, templateId: template.id, occurrenceDate: rule.startDate } : task))
-    setEditingTask(null); setRepeatRule(null); setRepeatDays([])
+  function resumeRepeatById(templateId: string) {
+    setTemplates((current) => current.map((item) => item.id === templateId ? { ...item, paused: false } : item))
   }
 
-  function stopRepeat(task: LocalTask) {
-    if (!task.templateId) return
-    setTemplates((current) => current.map((item) => item.id === task.templateId ? { ...item, paused: true } : item))
-  }
-
-  function resumeRepeat(task: LocalTask) {
-    if (!task.templateId) return
-    setTemplates((current) => current.map((item) => item.id === task.templateId ? { ...item, paused: false } : item))
-  }
-
-  function deleteRepeat(task: LocalTask) {
-    if (!task.templateId) return
+  function deleteRepeatById(templateId: string) {
     if (!window.confirm('停止这条重复规则？已生成的任务会保留，之后不再生成新的。')) return
-    const templateId = task.templateId
     setTemplates((current) => current.filter((item) => item.id !== templateId))
     const unlink = (item: LocalTask) => item.templateId === templateId ? { ...item, templateId: undefined, occurrenceDate: undefined } : item
     setTasks((current) => current.map(unlink))
@@ -810,114 +648,14 @@ function App() {
 
       {carryoverItems.length > 0 && <CarryoverCard items={carryoverItems} keeps={carryoverKeeps} onToggle={(taskId, keep) => setCarryoverKeeps((current) => ({ ...current, [taskId]: keep }))} onFinish={finishCarryover} onSkip={skipCarryover} />}
 
-      <section className="timeline-card" aria-label="今日时间线">
-        <div className="section-heading">
-          <div><p className="label">今日时间线</p><h2>{showAll ? '全部任务' : '接下来'}</h2></div>
-          <span className="muted">{changeCount ? `计划变了 ${changeCount} 处` : `${plan.planBlocks.length} 件已安排`}</span>
-        </div>
-        <div className="timeline">
-          {visibleTasks.length === 0 && <p className="empty">还没有安排。把现实中的事情写在下面。</p>}
-          {timelineRows.map((entry) => {
-            if (entry.kind === 'block') return <div className="special-row block" key={`block-${entry.startAt}-${entry.title}`}><span className="row-time">{new Date(entry.startAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span><span className="row-rail" aria-hidden="true"><i className="rail-dot is-block" /></span><span className="special-copy"><span>{entry.title}</span><small>固定日程，任务不会排进来</small></span></div>
-            if (entry.kind !== 'task') return <div className={`special-row ${entry.kind}`} key={`${entry.kind}-${entry.startAt}`}><span className="row-time">{new Date(entry.startAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span><span className="row-rail" aria-hidden="true"><i className="rail-dot" /></span><span className="special-copy"><span>{entry.title}</span><small>{entry.kind === 'buffer' ? '为变化留出空间' : '这段时间本身就是计划的一部分'}</small></span></div>
-            const task = tasks.find((candidate) => candidate.id === entry.taskId)
-            if (!task) return null
-            const isCurrent = !task.done && Date.parse(entry.startAt) <= Date.parse(now) && Date.parse(now) < Date.parse(entry.endAt)
-            return <div className={`task-row ${task.done ? 'is-done' : ''} ${selectedTaskId === task.id ? 'is-selected' : ''} ${isCurrent ? 'is-current' : ''}`} key={task.id}>
-              <span className="row-time">{new Date(entry.startAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
-              <span className="row-rail" aria-hidden="true"><i className={`rail-dot ${isCurrent ? 'is-now' : ''}`} /></span>
-              <button className="task-main" type="button" onClick={() => { setSelectedTaskId(task.id); toggleTask(task.id) }}><span className="task-check" aria-hidden="true">{task.done ? '✓' : ''}</span><span className="task-copy"><span className="task-title">{task.title}{task.importance === 'must' && <span className="importance-badge">必须做</span>}</span><span className="task-place">{task.targetDurationMinutes ? `${task.targetDurationMinutes} 分钟` : '还没估时间'}{task.place ? ` · ${task.place}` : ''}</span>{task.notes && <span className="task-notes">{task.notes}</span>}</span></button>
-              <span className="task-side">{isCurrent && <span className="now-chip">现在</span>}<small>{task.done ? '已完成' : entry.source === 'manualLock' ? '已锁定' : '已安排'}</small></span>
-              <button className="edit-button" type="button" onClick={() => openEditor(task)}>改</button>
-            </div>
-          })}
-          {showAll && (plan.unscheduledTasks.length > 0 || tomorrowTasks.length > 0) && <div className="deferred-list">
-            <p className="label">今天没排进去</p>
-            {plan.unscheduledTasks.map((item) => {
-              const task = tasks.find((candidate) => candidate.id === item.taskId)
-              const decidable = item.reasonCodes.includes('PRESERVED_BUFFER') || item.reasonCodes.includes('REST_PROTECTION') || item.reasonCodes.includes('INSUFFICIENT_TIME')
-              return task && <div className="deferred-row decision-row" key={item.taskId}>
-                <span>{task.title}</span>
-                {decidable ? <span className="decision-actions"><small>{reasonText(item.reasonCodes)}</small><button className="link-button" type="button" onClick={() => openEditor(task)}>改</button><button className="link-button" type="button" onClick={() => setTaskFlag(item.taskId, { forceToday: true })}>放在今天</button><button className="link-button" type="button" onClick={() => setTaskFlag(item.taskId, { deferredUntil: tomorrowStr })}>放到明天</button><button className="link-button" type="button" onClick={() => { setSettingsSection('planning'); setSettingsOpen(true) }}>调整时段</button></span> : <small>{reasonText(item.reasonCodes)}</small>}
-              </div>
-            })}
-            {tomorrowTasks.length > 0 && <div className="tomorrow-group"><p className="label">明天见</p>{tomorrowTasks.map((task) => <div className="deferred-row" key={task.id}><span>{task.title}</span><span className="decision-actions"><small>明天自动排入</small><button className="link-button" type="button" onClick={() => setTaskFlag(task.id, { deferredUntil: undefined })}>留在今天</button></span></div>)}</div>}
-          </div>}
-        </div>
-      </section>
+      <Timeline rows={timelineRows} tasks={tasks} now={now} selectedTaskId={selectedTaskId} planCount={plan.planBlocks.length} changeCount={changeCount} showAll={showAll} unscheduled={plan.unscheduledTasks} tomorrowTasks={tomorrowTasks} tomorrowStr={tomorrowStr} onToggleSelect={(id) => { setSelectedTaskId(id); toggleTask(id) }} onEdit={openEditor} onTaskFlag={setTaskFlag} onOpenSettings={() => { setSettingsSection('planning'); setSettingsOpen(true) }} />
 
-      <section className="capture" aria-label="快速添加">
-        <input value={title} onChange={(event) => setTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') (createOpen ? addTaskDetailed() : addTask()) }} placeholder="加一件事" aria-label="加一件事" />
-        <input className="minutes-input" value={minutes} onChange={(event) => setMinutes(event.target.value)} aria-label="预计分钟" inputMode="numeric" />
-        <span className="minutes-label">分</span>
-        {voiceSupported && <button className={`mic-button ${voiceListening ? 'listening' : ''}`} type="button" aria-label={voiceListening ? '停止听写' : '语音输入'} title={voiceListening ? '停止听写' : '语音输入'} onClick={toggleVoice}>🎙</button>}
-        <button className="add-button" type="button" onClick={() => (createOpen ? addTaskDetailed() : addTask())}>加</button>
-      </section>
-      {voiceError && <p className="voice-error">{voiceError === 'not-allowed' ? '需要麦克风权限才能听写。' : voiceError === 'network' ? '语音服务暂时不可用，检查网络后重试。' : '没听清，再试一次。'}</p>}
-      {!createOpen && <button className="link-button expand-toggle" type="button" onClick={() => setCreateOpen(true)}>展开详细设置，顺便定好重要性和时间 ▾</button>}
-      {!blocksOpen && <button className="link-button expand-toggle" type="button" onClick={() => setBlocksOpen(true)}>加一段固定日程（会议、课程这类挪不动的时间） ▾</button>}
-      {blocksOpen && <section className="edit-card create-card" aria-label="固定日程">
-        <div className="edit-heading"><p className="label">固定日程</p><button className="link-button" type="button" onClick={() => setBlocksOpen(false)}>收起</button></div>
-        <p className="settings-copy">会议、课程这类挪不动的时间。排程会把它们挖掉，任务不会排进这些时段。</p>
-        <div className="edit-grid"><input value={blockTitle} onChange={(event) => setBlockTitle(event.target.value)} placeholder="标题，比如：组会" aria-label="日程标题" /><div className="block-times"><input type="time" value={blockStart} onChange={(event) => setBlockStart(event.target.value)} aria-label="日程开始" /><input type="time" value={blockEnd} onChange={(event) => setBlockEnd(event.target.value)} aria-label="日程结束" /></div></div>
-        {blockError && <p className="error-text">{blockError}</p>}
-        <div className="settings-actions"><button className="add-button" type="button" onClick={addBlock}>添加日程</button></div>
-        {blocks.filter((block) => localDate(block.startAt) === todayStr).map((block) => <div className="deferred-row" key={block.id}><span>{block.title}</span><span className="decision-actions"><small>{new Date(block.startAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} — {new Date(block.endAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</small><button className="link-button" type="button" onClick={() => setBlocks((current) => current.filter((item) => item.id !== block.id))}>删除</button></span></div>)}
-      </section>}
-      {createOpen && <section className="edit-card create-card" aria-label="新任务详细设置">
-        <div className="edit-heading"><p className="label">新任务 · 详细设置</p><button className="link-button" type="button" onClick={resetCreate}>收起</button></div>
-        <div className="repeat-panel"><span className="edit-hint">重要性</span>{([['must', '必须做'], ['important', '重要'], ['want', '想做']] as Array<[Importance, string]>).map(([value, label]) => <button className={createImportance === value ? 'choice active' : 'choice'} type="button" key={value} onClick={() => setCreateImportance(value)}>{label}</button>)}</div>
-        <div className="repeat-panel"><span className="edit-hint">拆分</span><button className={createSplittable ? 'choice active' : 'choice'} type="button" onClick={() => setCreateSplittable((value) => !value)}>{createSplittable ? '可以切小块' : '不切分'}</button><span className="edit-hint">超过 50 分钟的长任务自动按 25 分钟切块</span></div>
-        <div className="edit-grid"><input type="datetime-local" value={createDeadline} onChange={(event) => setCreateDeadline(event.target.value)} aria-label="截止时间" /><span className="edit-hint">截止时间，可选</span></div>
-        <div className="edit-grid"><input value={createPlace} onChange={(event) => setCreatePlace(event.target.value)} placeholder="在哪里" aria-label="在哪里" /><input type="time" value={createPinTime} onChange={(event) => setCreatePinTime(event.target.value)} aria-label="钉在几点" /></div>
-        <span className="edit-hint pin-hint">钉在几点，留空表示自动安排</span>
-        <textarea value={createNotes} onChange={(event) => setCreateNotes(event.target.value)} placeholder="描述" rows={2} aria-label="描述" />
-        <div className="repeat-panel">
-          <span className="edit-hint">重复</span>
-          <button className={createRepeatRule?.kind === 'daily' ? 'choice active' : 'choice'} type="button" onClick={() => setCreateRepeatRule({ kind: 'daily', startDate: localDate(new Date().toISOString()) })}>每天</button>
-          <button className={createRepeatRule?.kind === 'weekly' ? 'choice active' : 'choice'} type="button" onClick={() => setCreateRepeatRule({ kind: 'weekly', weekdays: createRepeatDays, startDate: localDate(new Date().toISOString()) })}>每周</button>
-          {createRepeatRule?.kind === 'weekly' && <div className="weekday-list">{['日', '一', '二', '三', '四', '五', '六'].map((label, index) => <button className={createRepeatDays.includes(index) ? 'day active' : 'day'} type="button" key={label} onClick={() => setCreateRepeatDays((current) => current.includes(index) ? current.filter((value) => value !== index) : [...current, index])}>{label}</button>)}</div>}
-          {createRepeatRule && <span className="edit-hint">会创建一条重复规则，今天生成第一件</span>}
-        </div>
-        {createError && <p className="error-text">{createError}</p>}
-      </section>}
+      <CaptureCard blocksOpen={blocksOpen} onQuickAdd={handleQuickAdd} onDetailedAdd={handleDetailedAdd} onOpenBlocks={() => setBlocksOpen(true)} />
+      {blocksOpen && <BlocksCard todayBlocks={blocks.filter((block) => localDate(block.startAt) === todayStr)} today={todayStr} onAdd={(block) => setBlocks((current) => [...current, block])} onDelete={(id) => setBlocks((current) => current.filter((item) => item.id !== id))} onClose={() => setBlocksOpen(false)} />}
 
-      {editingTask && <section className="edit-card" aria-label="编辑任务">
-        <div className="edit-heading"><p className="label">编辑任务</p><span className="edit-heading-actions"><button className="link-button danger-link" type="button" onClick={() => removeTask(editingTask.id)}>删除这件事</button><button className="link-button" type="button" onClick={() => setEditingTask(null)}>取消</button></span></div>
-        <input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} placeholder="要做什么？" />
-        <div className="edit-grid"><input value={editMinutes} onChange={(event) => setEditMinutes(event.target.value)} placeholder="分钟" inputMode="numeric" /><input value={editPlace} onChange={(event) => setEditPlace(event.target.value)} placeholder="在哪里" /></div>
-        <textarea value={editNotes} onChange={(event) => setEditNotes(event.target.value)} placeholder="描述" rows={3} />
-        <div className="repeat-panel"><span className="edit-hint">重要性</span>{([['must', '必须做'], ['important', '重要'], ['want', '想做']] as Array<[Importance, string]>).map(([value, label]) => <button className={editImportance === value ? 'choice active' : 'choice'} type="button" key={value} onClick={() => setEditImportance(value)}>{label}</button>)}</div>
-        <div className="repeat-panel"><span className="edit-hint">拆分</span><button className={editSplittable ? 'choice active' : 'choice'} type="button" onClick={() => setEditSplittable((value) => !value)}>{editSplittable ? '可以切小块' : '不切分'}</button><span className="edit-hint">超过 50 分钟的长任务自动按 25 分钟切块</span></div>
-        <div className="edit-grid"><input type="datetime-local" value={editDeadline} onChange={(event) => setEditDeadline(event.target.value)} aria-label="截止时间" /><span className="edit-hint">截止时间，可选</span></div>
-        <div className="edit-grid"><input type="time" value={pinTime} onChange={(event) => setPinTime(event.target.value)} /><span className="edit-hint">留空表示自动安排</span></div>
-        <div className="repeat-panel">
-          <span className="edit-hint">重复</span>
-          <button className={repeatRule?.kind === 'daily' ? 'choice active' : 'choice'} type="button" onClick={() => setRepeatRule({ kind: 'daily', startDate: localDate(new Date().toISOString()) })}>每天</button>
-          <button className={repeatRule?.kind === 'weekly' ? 'choice active' : 'choice'} type="button" onClick={() => setRepeatRule({ kind: 'weekly', weekdays: repeatDays, startDate: localDate(new Date().toISOString()) })}>每周</button>
-          {repeatRule?.kind === 'weekly' && <div className="weekday-list">{['日', '一', '二', '三', '四', '五', '六'].map((label, index) => <button className={repeatDays.includes(index) ? 'day active' : 'day'} type="button" key={label} onClick={() => toggleRepeatDay(index)}>{label}</button>)}</div>}
-          {repeatRule && <button className="secondary-button" type="button" onClick={saveRepeat}>保存重复规则</button>}
-          {editingTask.templateId && !editingTemplate?.paused && <button className="link-button" type="button" onClick={() => stopRepeat(editingTask)}>暂停重复</button>}
-          {editingTask.templateId && editingTemplate?.paused && <button className="link-button" type="button" onClick={() => resumeRepeat(editingTask)}>恢复重复</button>}
-          {editingTask.templateId && <button className="link-button" type="button" onClick={() => deleteRepeat(editingTask)}>不再重复</button>}
-        </div>
-        {(editingLive?.deferredUntil || editingLive?.forceToday) && <div className="repeat-panel">
-          {editingLive.deferredUntil && <><span className="edit-hint">已放到 {editingLive.deferredUntil}，那天自动排入</span><button className="link-button" type="button" onClick={() => setTaskFlag(editingLive.id, { deferredUntil: undefined })}>留在今天</button></>}
-          {editingLive.forceToday && <><span className="edit-hint">已让它留在今天（可占用休息）</span><button className="link-button" type="button" onClick={() => setTaskFlag(editingLive.id, { forceToday: undefined })}>恢复自动安排</button></>}
-        </div>}
-        {editError && <p className="error-text">{editError}</p>}
-        <button className="add-button save-edit" type="button" onClick={saveEdit}>保存修改</button>
-      </section>}
+      {editingTask && <EditCard key={editingTask.id} task={editingTask} templates={templates} onClose={() => setEditingTask(null)} onSaveTask={(updated) => { setTasks((current) => current.map((item) => item.id === updated.id ? updated : item)); setEditingTask(null) }} onDeleteTask={() => removeTask(editingTask.id)} onTaskFlag={setTaskFlag} onPauseRepeat={stopRepeatById} onResumeRepeat={resumeRepeatById} onDeleteRepeat={deleteRepeatById} onSetRepeat={(rule) => setRepeatForTask(editingTask, rule)} />}
 
-      <section className="edit-card ai-card" aria-label="AI 建议顺序">
-        <div className="edit-heading"><p className="label">AI 建议 · 可选</p>{aiState === 'ready' && <button className="link-button" type="button" onClick={dismissAiAdvice}>收起</button>}</div>
-        {preferredOrder && <div className="ai-adopted"><p className="detail-empty">已按建议顺序重排，休息和缓冲仍由规则保护。</p><button className="link-button" type="button" onClick={() => setPreferredOrder(null)}>恢复规则排序</button></div>}
-        {aiState === 'idle' && <><p className="settings-copy">让 AI 根据重要性和今天剩下的时间给任务排个顺序。它只提建议，采纳与否由你决定。</p><button className="secondary-button" type="button" onClick={askAiOrder}>查看建议顺序</button></>}
-        {aiState === 'loading' && <p className="detail-empty">正在整理顺序……</p>}
-        {aiState === 'error' && <p className="error-text">{aiReason}</p>}
-        {aiState === 'ready' && <><p className="detail-empty">{aiReason}</p><p className="ai-order">{aiOrder.map((id) => tasks.find((task) => task.id === id)?.title).filter(Boolean).join(' → ')}</p><div className="settings-actions"><button className="secondary-button" type="button" onClick={() => { setPreferredOrder(aiOrder); dismissAiAdvice() }}>就这么排</button><button className="link-button" type="button" onClick={dismissAiAdvice}>不用</button></div><small>采纳后本地规则仍负责具体时间安排，休息和缓冲照常保护。</small></>}
-      </section>
-
+      <AiCard tasks={tasks} apiBaseUrl={apiBaseUrl} adopted={preferredOrder !== null} onAdopt={setPreferredOrder} onRestoreRules={() => setPreferredOrder(null)} />
       {reviewDue && <ReviewCard items={weekReview} onFinish={finishReview} />}
 
       <section className="quiet-note"><span className="note-mark">✦</span><p>排不下的时候，我会告诉你原因。<br />不会偷偷吃掉你的休息。</p></section>
