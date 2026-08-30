@@ -6,8 +6,13 @@ import type { FocusSession } from '../../../packages/core/src/focus'
 import { focusRemainingSeconds, pauseFocus, resumeFocus, startFocus } from '../../../packages/core/src/focus'
 import { CropEditor } from './CropEditor'
 import { FocusView } from './components/FocusView'
+import { Header } from './components/Header'
+import { CarryoverCard } from './components/CarryoverCard'
+import { ReviewCard } from './components/ReviewCard'
+import { DetailPanel } from './components/DetailPanel'
 import { SettingsPage } from './components/SettingsPage'
 import type { SettingsSection } from './components/SettingsPage'
+import { localDate, reasonText, toLocalInput } from './format'
 import { speechSupported, useSpeechRecognition } from './speech'
 import './styles.css'
 
@@ -57,32 +62,8 @@ function loadTemplates(): RecurringTemplate[] {
   }
 }
 
-function reasonText(codes: string[]): string {
-  if (codes.includes('ESTIMATE_REQUIRED')) return '还没估时间'
-  if (codes.includes('PRESERVED_BUFFER')) return '需要动用缓冲'
-  if (codes.includes('REST_PROTECTION')) return '会占用休息时间'
-  if (codes.includes('DEADLINE_URGENT')) return '截止时间很近'
-  return '今天时间不够'
-}
-
 function loadFocus(): FocusSession | null {
   try { const raw = localStorage.getItem(FOCUS_KEY); return raw ? JSON.parse(raw) as FocusSession : null } catch { return null }
-}
-
-// The local calendar date (YYYY-MM-DD). toISOString().slice(0, 10) would give
-// the UTC date, which lags a day for every early-morning hour east of UTC.
-function localDate(iso: string): string {
-  const date = new Date(iso)
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
-
-function pad2(value: number): string { return String(value).padStart(2, '0') }
-
-// ISO instant -> value for <input type="datetime-local"> in the local zone.
-function toLocalInput(iso?: string): string {
-  if (!iso) return ''
-  const date = new Date(iso)
-  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}T${pad2(date.getHours())}:${pad2(date.getMinutes())}`
 }
 
 interface BackgroundConfig { dataUrl: string; blur: number; dim: number; saturate: number }
@@ -817,21 +798,7 @@ function App() {
       {backgroundLayers}
       {updateReady && <div className="update-toast"><span>LifeFlow 更新好了，刷新一下就能用上新版。</span><button className="secondary-button" type="button" onClick={() => location.reload()}>刷新</button></div>}
       <main className="shell">
-      <header className="header">
-        <div>
-          <p className="eyebrow">LIFEFLOW</p>
-          <div className="tagline-block">
-            <h1>{tagline.text}</h1>
-            {tagline.from && <span className="tagline-from">——{tagline.from}</span>}
-          </div>
-          <p className="date">{today}</p>
-        </div>
-        <div className="header-actions">
-          <label className="theme-control"><span>皮肤</span><select aria-label="切换皮肤" value={themeId} onChange={(event) => setThemeId(event.target.value as ThemeId)}>{themeIds.map((id) => <option value={id} key={id}>{getTheme(id).name}</option>)}</select></label>
-          <button className="ghost-button" type="button" onClick={() => setShowAll((value) => !value)}>{showAll ? '只看今天' : '全部任务'}</button>
-          <button className="ghost-button" type="button" onClick={() => setSettingsOpen((value) => !value)}>设置</button>
-        </div>
-      </header>
+      <Header tagline={tagline} today={today} themeId={themeId} onThemeChange={setThemeId} showAll={showAll} onToggleShowAll={() => setShowAll((value) => !value)} onOpenSettings={() => setSettingsOpen(true)} />
 
       <div className="workspace">
         <aside className="sidebar" aria-label="导航与状态">
@@ -841,12 +808,7 @@ function App() {
         <section className="timeline-area">
           <section className="focus-line" aria-label="当前进行"><span className="focus-dot" />{plan.planBlocks.length ? '计划已经准备好了' : '先放下一件事'}<span className="muted">{changeCount ? `计划变了 ${changeCount} 处` : ''}</span></section>
 
-      {carryoverItems.length > 0 && <section className="edit-card carryover-card" aria-label="隔夜整理">
-        <div className="edit-heading"><p className="label">CARRYOVER / 隔夜整理</p></div>
-        <p className="settings-copy">昨天留下来的事，还想继续吗？勾着的留下，去掉的轻轻放下，不记任何账。</p>
-        <div className="carryover-list">{carryoverItems.map((item) => <label className="carryover-row" key={item.taskId}><input type="checkbox" checked={carryoverKeeps[item.taskId] ?? true} onChange={(event) => setCarryoverKeeps((current) => ({ ...current, [item.taskId]: event.target.checked }))} /><span className="carryover-title">{item.title}</span>{item.minutes !== undefined && <small>{item.minutes} 分钟</small>}</label>)}</div>
-        <div className="settings-actions"><button className="secondary-button" type="button" onClick={finishCarryover}>好</button><button className="link-button" type="button" onClick={skipCarryover}>先不管</button></div>
-      </section>}
+      {carryoverItems.length > 0 && <CarryoverCard items={carryoverItems} keeps={carryoverKeeps} onToggle={(taskId, keep) => setCarryoverKeeps((current) => ({ ...current, [taskId]: keep }))} onFinish={finishCarryover} onSkip={skipCarryover} />}
 
       <section className="timeline-card" aria-label="今日时间线">
         <div className="section-heading">
@@ -956,30 +918,13 @@ function App() {
         {aiState === 'ready' && <><p className="detail-empty">{aiReason}</p><p className="ai-order">{aiOrder.map((id) => tasks.find((task) => task.id === id)?.title).filter(Boolean).join(' → ')}</p><div className="settings-actions"><button className="secondary-button" type="button" onClick={() => { setPreferredOrder(aiOrder); dismissAiAdvice() }}>就这么排</button><button className="link-button" type="button" onClick={dismissAiAdvice}>不用</button></div><small>采纳后本地规则仍负责具体时间安排，休息和缓冲照常保护。</small></>}
       </section>
 
-      {reviewDue && <section className="edit-card review-card" aria-label="每周回顾">
-        <p className="label">WEEKLY / 每周回顾</p>
-        <h2>这一周，你做过这些</h2>
-        <p className="settings-copy">不算完成率，不排名次。做过，就算数。</p>
-        <ul className="review-list">{weekReview.map((item) => <li key={item.title}>{item.title}{item.count > 1 ? ` ×${item.count}` : ''}</li>)}</ul>
-        <button className="secondary-button" type="button" onClick={finishReview}>好</button>
-      </section>}
+      {reviewDue && <ReviewCard items={weekReview} onFinish={finishReview} />}
 
       <section className="quiet-note"><span className="note-mark">✦</span><p>排不下的时候，我会告诉你原因。<br />不会偷偷吃掉你的休息。</p></section>
       <footer><span>本地保存 · 不需要账号</span><button className="link-button" type="button" onClick={() => setShowAll(true)}>查看全部任务</button></footer>
         </section>
         <aside className="detail-panel" aria-label="任务详情">
-          {selectedTask ? <>
-            <p className="label">任务详情</p>
-            <h2 className="detail-title">{selectedTask.title}</h2>
-            {selectedBlock && <p className="detail-time">{new Date(selectedBlock.startAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} — {new Date(selectedBlock.endAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</p>}
-            <p className="detail-meta">{selectedTask.targetDurationMinutes ? `${selectedTask.targetDurationMinutes} 分钟` : '还没估时间'}{selectedTask.place ? ` · ${selectedTask.place}` : ''}</p>
-            {selectedTask.notes && <p className="detail-empty">{selectedTask.notes}</p>}
-            <div className="detail-rule" />
-            <p className="label">为什么在这里</p>
-            <ul className="detail-list"><li>{selectedTask.importance === 'must' ? '你标记了今天需要完成' : selectedTask.importance === 'want' ? '你想做的事，排在重要事情之后' : '按当前可用时间安排'}</li><li>{selectedTask.targetDurationMinutes ? `预计需要 ${selectedTask.targetDurationMinutes} 分钟` : '需要先补充预计时间'}</li>{selectedBlock?.source === 'manualLock' && <li>这是你手动锁定的时间</li>}</ul>
-            <button className="edit-button" type="button" onClick={() => openEditor(selectedTask)}>编辑这件事</button>
-            <div className="focus-panel"><p className="label">专注</p><button className="secondary-button" type="button" onClick={() => startFocusFor(selectedTask)}>开始专注</button></div>
-          </> : <p className="detail-empty">选择一件事，查看它为什么出现在这里。</p>}
+          {selectedTask ? <DetailPanel task={selectedTask} block={selectedBlock} onOpenEditor={() => openEditor(selectedTask)} onStartFocus={() => startFocusFor(selectedTask)} /> : <p className="detail-empty">选择一件事，查看它为什么出现在这里。</p>}
         </aside>
       </div>
     </main>
@@ -987,5 +932,8 @@ function App() {
   )
 }
 
-createRoot(document.getElementById('root')!).render(<App />)
+const rootElement = document.getElementById('root')
+if (rootElement) createRoot(rootElement).render(<App />)
+
+export default App
 
