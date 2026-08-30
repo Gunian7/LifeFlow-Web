@@ -84,6 +84,9 @@ html.custom-bg-on body[data-theme='archive-terminal'] { background-image: none; 
 .mic-button.listening { border-color: var(--accent); color: var(--accent); animation: mic-pulse 1.2s ease-in-out infinite; }
 @keyframes mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 35%, transparent); } 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 12%, transparent); } }
 .voice-error { margin: 6px 0 0; color: var(--error); font-size: 12px; }
+.expand-toggle { margin: 6px 0 0; padding: 4px 0; font-size: 12px; }
+.create-card { border-style: dashed; }
+.create-card textarea { width: 100%; resize: vertical; line-height: 1.6; }
 button, input, textarea { font: inherit; }
 button { cursor: pointer; }
 

@@ -238,6 +238,62 @@ function App() {
     startVoice()
   }
 
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createImportance, setCreateImportance] = useState<Importance>('important')
+  const [createPlace, setCreatePlace] = useState('')
+  const [createNotes, setCreateNotes] = useState('')
+  const [createPinTime, setCreatePinTime] = useState('')
+  const [createRepeatRule, setCreateRepeatRule] = useState<RecurrenceRule | null>(null)
+  const [createRepeatDays, setCreateRepeatDays] = useState<number[]>([])
+  const [createError, setCreateError] = useState('')
+
+  function resetCreate() {
+    setCreateOpen(false)
+    setCreateImportance('important')
+    setCreatePlace('')
+    setCreateNotes('')
+    setCreatePinTime('')
+    setCreateError('')
+    setCreateRepeatRule(null)
+    setCreateRepeatDays([])
+  }
+
+  function addTaskDetailed() {
+    const cleanTitle = title.trim()
+    if (!cleanTitle) { setCreateError('先给它起个名字。'); return }
+    if (createRepeatRule?.kind === 'weekly' && createRepeatDays.length === 0) { setCreateError('每周重复至少选一天。'); return }
+    const parsed = Number.parseInt(minutes, 10)
+    const draft: TaskDraft = {
+      title: cleanTitle,
+      importance: createImportance,
+      splittable: false,
+      place: createPlace || undefined,
+      notes: createNotes || undefined,
+      targetDurationMinutes: Number.isInteger(parsed) && parsed > 0 ? parsed : undefined,
+    }
+    const created = createTask(draft, new Date().toISOString(), crypto.randomUUID())
+    if (!created.task) return
+    let task = created.task
+    if (createPinTime) {
+      const pinned = pinTask(task, createPinTime, new Date().toISOString().slice(0, 10), 'Asia/Shanghai', new Date().toISOString())
+      if (!pinned.task) { setCreateError('这个时间已经过去了，或者时长还没填。'); return }
+      task = pinned.task
+    }
+    if (createRepeatRule) {
+      const rule: RecurrenceRule = { kind: createRepeatRule.kind, weekdays: createRepeatRule.kind === 'weekly' ? createRepeatDays : undefined, startDate: new Date().toISOString().slice(0, 10) }
+      const template = createTemplate(crypto.randomUUID(), cleanTitle, rule, new Date().toISOString())
+      template.importance = createImportance
+      template.targetDurationMinutes = draft.targetDurationMinutes
+      template.place = draft.place
+      template.notes = draft.notes
+      setTemplates((current) => [...current, template])
+      task = { ...task, templateId: template.id, occurrenceDate: rule.startDate }
+    }
+    setTasks((current) => [...current, task])
+    setTitle(''); setMinutes('30')
+    resetCreate()
+  }
+
   useEffect(() => {
     localStorage.setItem(PLANNER_KEY, JSON.stringify(plannerConfig))
   }, [plannerConfig])
@@ -703,13 +759,28 @@ function App() {
       </section>
 
       <section className="capture" aria-label="快速添加">
-        <input value={title} onChange={(event) => setTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addTask() }} placeholder="加一件事" aria-label="加一件事" />
+        <input value={title} onChange={(event) => setTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') (createOpen ? addTaskDetailed() : addTask()) }} placeholder="加一件事" aria-label="加一件事" />
         <input className="minutes-input" value={minutes} onChange={(event) => setMinutes(event.target.value)} aria-label="预计分钟" inputMode="numeric" />
         <span className="minutes-label">分</span>
         {voiceSupported && <button className={`mic-button ${voiceListening ? 'listening' : ''}`} type="button" aria-label={voiceListening ? '停止听写' : '语音输入'} title={voiceListening ? '停止听写' : '语音输入'} onClick={toggleVoice}>🎙</button>}
-        <button className="add-button" type="button" onClick={addTask}>加</button>
+        <button className="add-button" type="button" onClick={() => (createOpen ? addTaskDetailed() : addTask())}>加</button>
       </section>
       {voiceError && <p className="voice-error">{voiceError === 'not-allowed' ? '需要麦克风权限才能听写。' : voiceError === 'network' ? '语音服务暂时不可用，检查网络后重试。' : '没听清，再试一次。'}</p>}
+      {!createOpen && <button className="link-button expand-toggle" type="button" onClick={() => setCreateOpen(true)}>展开详细设置，顺便定好重要性和时间 ▾</button>}
+      {createOpen && <section className="edit-card create-card" aria-label="新任务详细设置">
+        <div className="edit-heading"><p className="label">新任务 · 详细设置</p><button className="link-button" type="button" onClick={resetCreate}>收起</button></div>
+        <div className="repeat-panel"><span className="edit-hint">重要性</span>{([['must', '必须做'], ['important', '重要'], ['want', '想做']] as Array<[Importance, string]>).map(([value, label]) => <button className={createImportance === value ? 'choice active' : 'choice'} type="button" key={value} onClick={() => setCreateImportance(value)}>{label}</button>)}</div>
+        <div className="edit-grid"><input value={createPlace} onChange={(event) => setCreatePlace(event.target.value)} placeholder="在哪里" aria-label="在哪里" /><input type="time" value={createPinTime} onChange={(event) => setCreatePinTime(event.target.value)} aria-label="钉在几点，留空表示自动安排" /></div>
+        <textarea value={createNotes} onChange={(event) => setCreateNotes(event.target.value)} placeholder="描述" rows={2} aria-label="描述" />
+        <div className="repeat-panel">
+          <span className="edit-hint">重复</span>
+          <button className={createRepeatRule?.kind === 'daily' ? 'choice active' : 'choice'} type="button" onClick={() => setCreateRepeatRule({ kind: 'daily', startDate: new Date().toISOString().slice(0, 10) })}>每天</button>
+          <button className={createRepeatRule?.kind === 'weekly' ? 'choice active' : 'choice'} type="button" onClick={() => setCreateRepeatRule({ kind: 'weekly', weekdays: createRepeatDays, startDate: new Date().toISOString().slice(0, 10) })}>每周</button>
+          {createRepeatRule?.kind === 'weekly' && <div className="weekday-list">{['日', '一', '二', '三', '四', '五', '六'].map((label, index) => <button className={createRepeatDays.includes(index) ? 'day active' : 'day'} type="button" key={label} onClick={() => setCreateRepeatDays((current) => current.includes(index) ? current.filter((value) => value !== index) : [...current, index])}>{label}</button>)}</div>}
+          {createRepeatRule && <span className="edit-hint">会创建一条重复规则，今天生成第一件</span>}
+        </div>
+        {createError && <p className="error-text">{createError}</p>}
+      </section>}
 
       {editingTask && <section className="edit-card" aria-label="编辑任务">
         <div className="edit-heading"><p className="label">编辑任务</p><span className="edit-heading-actions"><button className="link-button danger-link" type="button" onClick={() => removeTask(editingTask.id)}>删除这件事</button><button className="link-button" type="button" onClick={() => setEditingTask(null)}>取消</button></span></div>
