@@ -7,12 +7,23 @@ export interface OrderTask {
   importance: 'must' | 'important' | 'want'
 }
 
+export interface OrderContext { now?: string; windowEndLocalTime?: string }
+
 export interface OrderProvider {
-  (tasks: OrderTask[]): Promise<string>
+  (tasks: OrderTask[], context: OrderContext): Promise<string>
 }
 
-interface OrderBody { tasks: unknown }
+interface OrderBody { tasks: unknown; context?: unknown }
 interface ProviderResult { order: unknown; reason: unknown }
+
+function normalizeContext(value: unknown): OrderContext {
+  if (!value || typeof value !== 'object') return {}
+  const raw = value as { now?: unknown; windowEndLocalTime?: unknown }
+  return {
+    now: typeof raw.now === 'string' ? raw.now : undefined,
+    windowEndLocalTime: typeof raw.windowEndLocalTime === 'string' ? raw.windowEndLocalTime : undefined,
+  }
+}
 
 function isTask(value: unknown): value is OrderTask {
   if (!value || typeof value !== 'object') return false
@@ -46,7 +57,7 @@ export async function handleOrder(context: Context<{ Bindings: { ORDER_PROVIDER?
   const provider = providerOverride ?? context.env?.ORDER_PROVIDER
   if (!provider) return context.json({ ok: false, error: 'PROVIDER_UNAVAILABLE' }, 502)
   let raw: string
-  try { raw = await provider(tasks) } catch { return context.json({ ok: false, error: 'PROVIDER_UNAVAILABLE' }, 502) }
+  try { raw = await provider(tasks, normalizeContext((body as OrderBody).context)) } catch { return context.json({ ok: false, error: 'PROVIDER_UNAVAILABLE' }, 502) }
   const result = parseProviderResponse(raw, tasks.map((task) => task.id))
   if (!result) return context.json({ ok: false, error: 'INVALID_PROVIDER_RESPONSE' }, 502)
   return context.json({ ok: true, order: result.order, reason: result.reason })

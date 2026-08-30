@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import type { ExistingPlanBlock, PlannerTask, StoredTask, TaskDraft, RecurrenceRule, RecurringTemplate, ThemeId } from '../../../packages/core/src'
+import type { ExistingPlanBlock, Importance, PlannerTask, StoredTask, TaskDraft, RecurrenceRule, RecurringTemplate, ThemeId } from '../../../packages/core/src'
 import { buildExport, buildTimelineEntries, createTask, createTemplate, defaultTheme, deleteTask, editTask, getTheme, materializeOccurrences, mergeImportedTasks, parseImport, pinTask, replanToday, completeTask, uncompleteTask, unpinTask, themeIds } from '../../../packages/core/src'
 import type { FocusSession } from '../../../packages/core/src/focus'
 import { focusRemainingSeconds, pauseFocus, resumeFocus, startFocus } from '../../../packages/core/src/focus'
@@ -16,6 +16,7 @@ const API_URL = 'https://lifeflow-api.mosesbeck761988kdl.workers.dev'
 const FOCUS_KEY = 'lifeflow-web-focus-v1'
 const API_CONFIG_KEY = 'lifeflow-web-api-v1'
 const BG_KEY = 'lifeflow-web-bg-v1'
+const PLANNER_KEY = 'lifeflow-web-planner-v1'
 
 const initialNow = new Date().toISOString()
 const initialTasks: LocalTask[] = [
@@ -59,11 +60,6 @@ function reasonText(codes: string[]): string {
 
 function loadFocus(): FocusSession | null {
   try { const raw = localStorage.getItem(FOCUS_KEY); return raw ? JSON.parse(raw) as FocusSession : null } catch { return null }
-}
-
-function formatFocusRemaining(session: FocusSession): string {
-  const seconds = focusRemainingSeconds(session, new Date().toISOString())
-  return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`
 }
 
 interface BackgroundConfig { dataUrl: string; blur: number; dim: number; saturate: number }
@@ -132,6 +128,48 @@ function readImageFile(file: File): Promise<string> {
   })
 }
 
+const TAGLINES: Array<{ text: string; from?: string }> = [
+  { text: '今天，慢慢来。' },
+  { text: '岁月本长，而忙者自促。', from: '《菜根谭》' },
+  { text: '闲时要有吃紧的心思，忙处要有悠闲的趣味。', from: '《菜根谭》' },
+  { text: '无事此静坐，一日似两日。', from: '苏轼' },
+  { text: '行到水穷处，坐看云起时。', from: '王维' },
+  { text: '物来顺应，未来不迎，当时不杂，既过不恋。', from: '曾国藩' },
+  { text: '蜗牛角上争何事，石火光中寄此身。', from: '白居易' },
+  { text: '人皆知有用之用，而莫知无用之用也。', from: '庄子' },
+  { text: '纵浪大化中，不喜亦不惧。', from: '陶渊明' },
+  { text: '能闲世人之所忙者，方能忙世人之所闲。', from: '张潮《幽梦影》' },
+  { text: '我们总是在准备生活，却从未开始生活。', from: '塞涅卡' },
+  { text: '在隆冬，我终于知道，我身上有一个不可战胜的夏天。', from: '加缪' },
+  { text: '人类的一切不幸，都源于不能安静地待在自己的房间里。', from: '帕斯卡' },
+]
+
+interface PlannerConfig { start: string; end: string; bufferMinutes: number; restEnabled: boolean; restStart: string; restEnd: string }
+const DEFAULT_PLANNER: PlannerConfig = { start: '08:00', end: '23:30', bufferMinutes: 45, restEnabled: true, restStart: '23:30', restEnd: '07:30' }
+
+function validTime(value: unknown): string | null {
+  return typeof value === 'string' && /^([01]\d|2[0-3]):([0-5]\d)$/.test(value) ? value : null
+}
+
+function loadPlannerConfig(): PlannerConfig {
+  try {
+    const raw = localStorage.getItem(PLANNER_KEY)
+    if (!raw) return DEFAULT_PLANNER
+    const parsed = JSON.parse(raw) as Partial<PlannerConfig>
+    const buffer = typeof parsed.bufferMinutes === 'number' && Number.isFinite(parsed.bufferMinutes) ? Math.min(300, Math.max(0, Math.round(parsed.bufferMinutes))) : DEFAULT_PLANNER.bufferMinutes
+    return {
+      start: validTime(parsed.start) ?? DEFAULT_PLANNER.start,
+      end: validTime(parsed.end) ?? DEFAULT_PLANNER.end,
+      bufferMinutes: buffer,
+      restEnabled: typeof parsed.restEnabled === 'boolean' ? parsed.restEnabled : DEFAULT_PLANNER.restEnabled,
+      restStart: validTime(parsed.restStart) ?? DEFAULT_PLANNER.restStart,
+      restEnd: validTime(parsed.restEnd) ?? DEFAULT_PLANNER.restEnd,
+    }
+  } catch {
+    return DEFAULT_PLANNER
+  }
+}
+
 function App() {
   const [tasks, setTasks] = useState<LocalTask[]>(loadTasks)
   const [existingBlocks, setExistingBlocks] = useState<ExistingPlanBlock[]>(loadPlan)
@@ -146,9 +184,10 @@ function App() {
   const [editNotes, setEditNotes] = useState('')
   const [editError, setEditError] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [settingsSection, setSettingsSection] = useState<'appearance' | 'data' | 'ai' | 'about'>('appearance')
-  const settingsItems: Array<{ id: 'appearance' | 'data' | 'ai' | 'about'; label: string }> = [
+  const [settingsSection, setSettingsSection] = useState<'appearance' | 'planning' | 'data' | 'ai' | 'about'>('appearance')
+  const settingsItems: Array<{ id: 'appearance' | 'planning' | 'data' | 'ai' | 'about'; label: string }> = [
     { id: 'appearance', label: '外观' },
+    { id: 'planning', label: '计划' },
     { id: 'data', label: '数据' },
     { id: 'ai', label: 'AI 与服务' },
     { id: 'about', label: '关于 LifeFlow' },
@@ -172,6 +211,7 @@ function App() {
     return () => window.clearInterval(timer)
   }, [])
   const today = new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }).format(new Date(now))
+  const tagline = TAGLINES[Math.floor((Date.parse(`${now.slice(0, 10)}T00:00:00Z`) - Date.parse(`${now.slice(0, 4)}-01-01T00:00:00Z`)) / 86400000) % TAGLINES.length]
   const [apiBaseUrl, setApiBaseUrl] = useState(loadApiBaseUrl)
   const [apiDraft, setApiDraft] = useState(() => { const saved = loadApiBaseUrl(); return saved === API_URL ? '' : saved })
   const [apiNotice, setApiNotice] = useState('')
@@ -181,6 +221,13 @@ function App() {
   const [bgNotice, setBgNotice] = useState('')
   const [cropOpen, setCropOpen] = useState(false)
   const bgInputRef = useRef<HTMLInputElement | null>(null)
+  const [plannerConfig, setPlannerConfig] = useState<PlannerConfig>(loadPlannerConfig)
+  const [preferredOrder, setPreferredOrder] = useState<string[] | null>(null)
+  const [editImportance, setEditImportance] = useState<Importance>('important')
+
+  useEffect(() => {
+    localStorage.setItem(PLANNER_KEY, JSON.stringify(plannerConfig))
+  }, [plannerConfig])
 
   useEffect(() => {
     document.documentElement.classList.toggle('custom-bg-on', Boolean(background.dataUrl))
@@ -243,11 +290,12 @@ function App() {
     now,
     settings: {
       timezone: 'Asia/Shanghai', planningDate: now.slice(0, 10),
-      availabilityStartLocalTime: '08:00', availabilityEndLocalTime: '23:30', dailyBufferMinutes: 45,
-      rest: { enabled: true, startLocalTime: '23:30', endLocalTime: '07:30' },
+      availabilityStartLocalTime: plannerConfig.start, availabilityEndLocalTime: plannerConfig.end, dailyBufferMinutes: plannerConfig.bufferMinutes,
+      rest: { enabled: plannerConfig.restEnabled, startLocalTime: plannerConfig.restStart, endLocalTime: plannerConfig.restEnd },
     },
     tasks: tasks.filter((task) => !task.done), fixedBlocks: [],
-  }), [tasks, now])
+    preferredOrder: preferredOrder ?? undefined,
+  }), [tasks, now, preferredOrder, plannerConfig])
 
   const plan = useMemo(() => replanToday({ ...plannerInput, existingBlocks }), [plannerInput, existingBlocks])
   useEffect(() => {
@@ -306,6 +354,7 @@ function App() {
     setEditPlace(task.place ?? '')
     setEditNotes(task.notes ?? '')
     setEditError('')
+    setEditImportance(task.importance)
     setPinTime(task.lockedStartAt ? new Date(task.lockedStartAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '')
     setRepeatRule(null)
     setRepeatDays([])
@@ -317,7 +366,7 @@ function App() {
     const parsed = Number.parseInt(rawMinutes, 10)
     const draft: TaskDraft = {
       title: editTitle,
-      importance: editingTask.importance,
+      importance: editImportance,
       splittable: editingTask.splittable,
       place: editPlace,
       notes: editNotes,
@@ -362,7 +411,7 @@ function App() {
     if (candidates.length === 0) return
     setAiState('loading'); setAiReason('')
     try {
-      const response = await fetch(`${apiBaseUrl}/v1/ai/order`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tasks: candidates }) })
+      const response = await fetch(`${apiBaseUrl}/v1/ai/order`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tasks: candidates, context: { now, windowEndLocalTime: plannerConfig.end } }) })
       const result = await response.json() as { ok?: boolean; order?: string[]; reason?: string }
       if (!response.ok || !result.ok || !result.order || !result.reason) throw new Error('AI_UNAVAILABLE')
       setAiOrder(result.order); setAiReason(result.reason); setAiState('ready')
@@ -432,6 +481,10 @@ function App() {
     setBackground((current) => ({ ...current, blur: DEFAULT_BG.blur, dim: DEFAULT_BG.dim, saturate: DEFAULT_BG.saturate }))
   }
 
+  function updatePlanner(patch: Partial<PlannerConfig>) {
+    setPlannerConfig((current) => ({ ...current, ...patch }))
+  }
+
   function removeBackgroundImage() {
     setBackground(DEFAULT_BG)
     setCropOpen(false)
@@ -470,7 +523,7 @@ function App() {
 
   function deleteAllData() {
     if (!window.confirm('确定删除 LifeFlow 保存的全部本地数据吗？此操作不可撤销。')) return
-    for (const key of [STORAGE_KEY, PLAN_KEY, TEMPLATE_KEY, FOCUS_KEY, THEME_KEY, API_CONFIG_KEY, BG_KEY]) localStorage.removeItem(key)
+    for (const key of [STORAGE_KEY, PLAN_KEY, TEMPLATE_KEY, FOCUS_KEY, THEME_KEY, API_CONFIG_KEY, BG_KEY, PLANNER_KEY]) localStorage.removeItem(key)
     setTasks([])
     setExistingBlocks([])
     setTemplates([])
@@ -484,6 +537,8 @@ function App() {
     setBackground(DEFAULT_BG)
     setBgNotice('')
     setCropOpen(false)
+    setPlannerConfig(DEFAULT_PLANNER)
+    setPreferredOrder(null)
     setSettingsOpen(false)
   }
 
@@ -529,6 +584,34 @@ function App() {
     </>
   ) : null
 
+  if (focusSession) {
+    const focusTask = tasks.find((task) => task.id === focusSession.taskId)
+    const remaining = focusRemainingSeconds(focusSession, new Date().toISOString())
+    const total = Math.max(1, focusSession.durationMinutes * 60)
+    const progress = Math.min(1, Math.max(0, 1 - remaining / total))
+    const ringLength = 2 * Math.PI * 120
+    return (
+      <>
+        {backgroundLayers}
+        <main className="focus-mode" aria-label="专注中">
+          <p className="focus-task">正在做：{focusTask?.title ?? '一件事'}</p>
+          <div className={`breath-ring ${focusSession.state === 'paused' ? 'is-paused' : ''}`}>
+            <svg viewBox="0 0 260 260" aria-hidden="true">
+              <circle className="ring-track" cx="130" cy="130" r="120" />
+              <circle className="ring-progress" cx="130" cy="130" r="120" strokeDasharray={ringLength} strokeDashoffset={ringLength * (1 - progress)} />
+            </svg>
+            <p className="focus-timer-big">{Math.floor(remaining / 60).toString().padStart(2, '0')}:{(remaining % 60).toString().padStart(2, '0')}</p>
+          </div>
+          <div className="focus-actions">
+            <button className="secondary-button" type="button" onClick={toggleFocus}>{focusSession.state === 'running' ? '暂停' : '继续'}</button>
+            <button className="link-button" type="button" onClick={endFocus}>结束专注</button>
+          </div>
+          <p className="focus-note">这段时间本身就是计划的一部分。</p>
+        </main>
+      </>
+    )
+  }
+
   if (settingsOpen) return (
     <>
       {backgroundLayers}
@@ -544,6 +627,7 @@ function App() {
         </nav>
         <div className="settings-content">
           {settingsSection === 'appearance' && <section className="settings-section" aria-label="外观设置"><p className="label">APPEARANCE / 外观</p><h2>视觉皮肤</h2><p className="settings-copy">皮肤只改变表现方式，不改变任务、计划规则或数据归属。</p><div className="theme-picker">{themeIds.map((id) => { const option = getTheme(id); return <button className={`theme-option ${themeId === id ? 'selected' : ''}`} type="button" key={id} onClick={() => setThemeId(id)}><span className="theme-swatch" style={{ background: option.tokens.background, borderColor: option.tokens.accent }} /><span><strong>{option.name}</strong><small>{option.description}</small></span></button> })}</div><div className="bg-picker"><p className="label">背景图</p><p className="settings-copy">用一张自己的图片做页面背景。上传后拖动裁剪框决定画面，缩放滑杆控制取景范围；模糊和遮罩帮文字保持可读。它只影响外观，不影响任务数据。</p>{background.dataUrl && <div className="bg-preview" style={{ backgroundImage: `url(${background.dataUrl})` }} aria-hidden="true" />}<input ref={bgInputRef} className="file-input" type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) handleBackgroundFile(file); event.currentTarget.value = '' }} /><div className="settings-actions"><button className="secondary-button" type="button" onClick={() => bgInputRef.current?.click()}>选择图片</button>{background.dataUrl && <button className="secondary-button" type="button" onClick={() => setCropOpen(true)}>裁剪画面</button>}{background.dataUrl && <button className="secondary-button" type="button" onClick={resetBackgroundParams}>恢复默认参数</button>}{background.dataUrl && <button className="secondary-button" type="button" onClick={removeBackgroundImage}>移除背景图</button>}</div>{cropOpen && background.dataUrl && <CropEditor dataUrl={background.dataUrl} aspect={window.innerWidth / window.innerHeight} onApply={(cropped) => { setBackground((current) => ({ ...current, dataUrl: cropped })); setCropOpen(false) }} onCancel={() => setCropOpen(false)} />}{background.dataUrl && !cropOpen && <div className="bg-controls"><label>模糊<input type="range" min={0} max={24} value={background.blur} onChange={(event) => updateBackground({ blur: Number(event.target.value) })} /><span>{background.blur}px</span></label><label>遮罩<input type="range" min={0} max={85} value={background.dim} onChange={(event) => updateBackground({ dim: Number(event.target.value) })} /><span>{background.dim}%</span></label><label>饱和度<input type="range" min={0} max={200} value={background.saturate} onChange={(event) => updateBackground({ saturate: Number(event.target.value) })} /><span>{background.saturate}%</span></label></div>}{bgNotice && <p className="import-notice">{bgNotice}</p>}</div></section>}
+          {settingsSection === 'planning' && <section className="settings-section" aria-label="计划设置"><p className="label">PLANNING / 计划</p><h2>今天的时间</h2><p className="settings-copy">下面的默认值只是示例，按你的现实来改。排程用这里的时间决定可用窗口、缓冲和休息；AI 也会参考它。</p><div className="planner-form"><label>可用时段从<input type="time" value={plannerConfig.start} onChange={(event) => { if (validTime(event.target.value)) updatePlanner({ start: event.target.value }) }} />到<input type="time" value={plannerConfig.end} onChange={(event) => { if (validTime(event.target.value)) updatePlanner({ end: event.target.value }) }} /></label><label>每日缓冲<input type="number" min={0} max={300} value={plannerConfig.bufferMinutes} onChange={(event) => updatePlanner({ bufferMinutes: Number(event.target.value) })} /><span>分钟</span></label><label className="checkbox-line"><input type="checkbox" checked={plannerConfig.restEnabled} onChange={(event) => updatePlanner({ restEnabled: event.target.checked })} />保护休息时段</label>{plannerConfig.restEnabled && <label>休息从<input type="time" value={plannerConfig.restStart} onChange={(event) => { if (validTime(event.target.value)) updatePlanner({ restStart: event.target.value }) }} />到<input type="time" value={plannerConfig.restEnd} onChange={(event) => { if (validTime(event.target.value)) updatePlanner({ restEnd: event.target.value }) }} /></label>}</div></section>}
           {settingsSection === 'data' && <section className="settings-section" aria-label="数据设置"><p className="label">DATA / 数据</p><h2>本地数据</h2><p className="settings-copy">任务保存在这台设备的浏览器里。没有账号，也不会自动上传。导入时，相同任务会保留更新时间较新的一份。</p><input ref={importInputRef} className="file-input" type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) importData(file); event.currentTarget.value = '' }} /><div className="settings-actions"><button className="secondary-button" type="button" onClick={exportData}>导出数据</button><button className="secondary-button" type="button" onClick={() => importInputRef.current?.click()}>导入数据</button><button className="danger-button" type="button" onClick={deleteAllData}>删除全部数据</button></div>{importNotice && <p className="import-notice">{importNotice}</p>}</section>}
           {settingsSection === 'ai' && <section className="settings-section" aria-label="AI 与服务设置"><p className="label">AI / AI 与服务</p><h2>AI 顾问</h2><p className="settings-copy">AI 建议会在你明确请求时使用。它只能提供顺序建议，不能替代本地 Planner，也不会自动修改你的计划。</p><p className="settings-copy">也可以接入自己的后端：只要提供 GET /health 和 POST /v1/ai/order（返回的顺序必须恰好包含每个任务 id 一次，并附一句理由），LifeFlow 就把请求发到你的服务。</p><div className="api-field"><p className="label">服务地址</p><input value={apiDraft} onChange={(event) => setApiDraft(event.target.value)} placeholder={API_URL} aria-label="后端服务地址" /></div><div className="settings-actions"><button className="secondary-button" type="button" onClick={saveApiConfig}>保存</button><button className="secondary-button" type="button" onClick={testApiConnection} disabled={apiTesting}>测试连接</button></div>{apiNotice && <p className="import-notice" style={{ color: apiNoticeTone === 'ok' ? 'var(--success)' : apiNoticeTone === 'fail' ? 'var(--error)' : undefined }}>{apiNotice}</p>}</section>}
           {settingsSection === 'about' && <section className="settings-section settings-placeholder" aria-label="关于 LifeFlow"><p className="label">ABOUT / 关于</p><h2>LifeFlow</h2><p className="settings-copy">一个帮助你重新进入生活的现实型时间规划工具。</p><span className="muted">本地优先 · 无需登录 · 计划可解释</span></section>}
@@ -560,8 +644,8 @@ function App() {
       <header className="header">
         <div>
           <p className="eyebrow">LIFEFLOW</p>
-          <h1>今天，慢慢来。</h1>
-          <p className="date">{today}</p>
+          <h1>{tagline.text}</h1>
+          <p className="date">{today}{tagline.from ? ` · ${tagline.from}` : ''}</p>
         </div>
         <div className="header-actions">
           <label className="theme-control"><span>皮肤</span><select aria-label="切换皮肤" value={themeId} onChange={(event) => setThemeId(event.target.value as ThemeId)}>{themeIds.map((id) => <option value={id} key={id}>{getTheme(id).name}</option>)}</select></label>
@@ -590,7 +674,7 @@ function App() {
             const task = tasks.find((candidate) => candidate.id === entry.taskId)
             if (!task) return null
             return <div className={`task-row ${task.done ? 'is-done' : ''} ${selectedTaskId === task.id ? 'is-selected' : ''}`} key={task.id}>
-              <button className="task-main" type="button" onClick={() => { setSelectedTaskId(task.id); toggleTask(task.id) }}><span className="task-check" aria-hidden="true">{task.done ? '✓' : ''}</span><span className="task-copy"><span className="task-title">{task.title}</span><span className="task-place">{task.targetDurationMinutes ? `${task.targetDurationMinutes} 分钟` : '还没估时间'}{task.place ? ` · ${task.place}` : ''}</span>{task.notes && <span className="task-notes">{task.notes}</span>}</span></button>
+              <button className="task-main" type="button" onClick={() => { setSelectedTaskId(task.id); toggleTask(task.id) }}><span className="task-check" aria-hidden="true">{task.done ? '✓' : ''}</span><span className="task-copy"><span className="task-title">{task.title}{task.importance === 'must' && <span className="importance-badge">必须做</span>}</span><span className="task-place">{task.targetDurationMinutes ? `${task.targetDurationMinutes} 分钟` : '还没估时间'}{task.place ? ` · ${task.place}` : ''}</span>{task.notes && <span className="task-notes">{task.notes}</span>}</span></button>
               <span className="task-time"><strong>{new Date(entry.startAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</strong><small>{task.done ? '已完成' : entry.source === 'manualLock' ? '已锁定' : '已安排'}</small></span>
               <button className="edit-button" type="button" onClick={() => openEditor(task)}>改</button>
             </div>
@@ -617,6 +701,7 @@ function App() {
         <input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} placeholder="要做什么？" />
         <div className="edit-grid"><input value={editMinutes} onChange={(event) => setEditMinutes(event.target.value)} placeholder="分钟" inputMode="numeric" /><input value={editPlace} onChange={(event) => setEditPlace(event.target.value)} placeholder="在哪里" /></div>
         <textarea value={editNotes} onChange={(event) => setEditNotes(event.target.value)} placeholder="描述" rows={3} />
+        <div className="repeat-panel"><span className="edit-hint">重要性</span>{([['must', '必须做'], ['important', '重要'], ['want', '想做']] as Array<[Importance, string]>).map(([value, label]) => <button className={editImportance === value ? 'choice active' : 'choice'} type="button" key={value} onClick={() => setEditImportance(value)}>{label}</button>)}</div>
         <div className="edit-grid"><input type="time" value={pinTime} onChange={(event) => setPinTime(event.target.value)} /><span className="edit-hint">留空表示自动安排</span></div>
         <div className="repeat-panel">
           <span className="edit-hint">重复</span>
@@ -634,10 +719,11 @@ function App() {
 
       <section className="edit-card ai-card" aria-label="AI 建议顺序">
         <div className="edit-heading"><p className="label">AI 建议 · 可选</p>{aiState === 'ready' && <button className="link-button" type="button" onClick={dismissAiAdvice}>收起</button>}</div>
-        {aiState === 'idle' && <><p className="settings-copy">让 AI 给今天的任务排个顺序。它只提建议，不会自动改变时间线。</p><button className="secondary-button" type="button" onClick={askAiOrder}>查看建议顺序</button></>}
+        {preferredOrder && <div className="ai-adopted"><p className="detail-empty">已按建议顺序重排，休息和缓冲仍由规则保护。</p><button className="link-button" type="button" onClick={() => setPreferredOrder(null)}>恢复规则排序</button></div>}
+        {aiState === 'idle' && <><p className="settings-copy">让 AI 根据重要性和今天剩下的时间给任务排个顺序。它只提建议，采纳与否由你决定。</p><button className="secondary-button" type="button" onClick={askAiOrder}>查看建议顺序</button></>}
         {aiState === 'loading' && <p className="detail-empty">正在整理顺序……</p>}
         {aiState === 'error' && <p className="error-text">{aiReason}</p>}
-        {aiState === 'ready' && <><p className="detail-empty">{aiReason}</p><p className="ai-order">{aiOrder.map((id) => tasks.find((task) => task.id === id)?.title).filter(Boolean).join(' → ')}</p><small>这只是建议，不会自动改变时间线。</small></>}
+        {aiState === 'ready' && <><p className="detail-empty">{aiReason}</p><p className="ai-order">{aiOrder.map((id) => tasks.find((task) => task.id === id)?.title).filter(Boolean).join(' → ')}</p><div className="settings-actions"><button className="secondary-button" type="button" onClick={() => { setPreferredOrder(aiOrder); dismissAiAdvice() }}>就这么排</button><button className="link-button" type="button" onClick={dismissAiAdvice}>不用</button></div><small>采纳后本地规则仍负责具体时间安排，休息和缓冲照常保护。</small></>}
       </section>
 
       <section className="quiet-note"><span className="note-mark">✦</span><p>排不下的时候，我会告诉你原因。<br />不会偷偷吃掉你的休息。</p></section>
@@ -652,9 +738,9 @@ function App() {
             {selectedTask.notes && <p className="detail-empty">{selectedTask.notes}</p>}
             <div className="detail-rule" />
             <p className="label">为什么在这里</p>
-            <ul className="detail-list"><li>{selectedTask.importance === 'must' ? '你标记了今天需要完成' : '按当前可用时间安排'}</li><li>{selectedTask.targetDurationMinutes ? `预计需要 ${selectedTask.targetDurationMinutes} 分钟` : '需要先补充预计时间'}</li>{selectedBlock?.source === 'manualLock' && <li>这是你手动锁定的时间</li>}</ul>
+            <ul className="detail-list"><li>{selectedTask.importance === 'must' ? '你标记了今天需要完成' : selectedTask.importance === 'want' ? '你想做的事，排在重要事情之后' : '按当前可用时间安排'}</li><li>{selectedTask.targetDurationMinutes ? `预计需要 ${selectedTask.targetDurationMinutes} 分钟` : '需要先补充预计时间'}</li>{selectedBlock?.source === 'manualLock' && <li>这是你手动锁定的时间</li>}</ul>
             <button className="edit-button" type="button" onClick={() => openEditor(selectedTask)}>编辑这件事</button>
-            <div className="focus-panel"><p className="label">专注</p>{focusSession?.taskId === selectedTask.id ? <><p className="focus-timer">{formatFocusRemaining(focusSession)}</p><button className="secondary-button" type="button" onClick={toggleFocus}>{focusSession.state === 'running' ? '暂停' : '继续'}</button><button className="link-button" type="button" onClick={endFocus}>结束专注</button></> : <button className="secondary-button" type="button" onClick={() => startFocusFor(selectedTask)}>开始专注</button>}</div>
+            <div className="focus-panel"><p className="label">专注</p><button className="secondary-button" type="button" onClick={() => startFocusFor(selectedTask)}>开始专注</button></div>
           </> : <p className="detail-empty">选择一件事，查看它为什么出现在这里。</p>}
         </aside>
       </div>

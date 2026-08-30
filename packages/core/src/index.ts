@@ -81,6 +81,9 @@ export interface PlannerInput {
   settings: PlannerSettings
   tasks: PlannerTask[]
   fixedBlocks: PlannerFixedBlock[]
+  // Scheduling preference (e.g. adopted AI advice). A preference, never a
+  // guarantee: rest, buffer, locks and feasibility rules still decide.
+  preferredOrder?: string[]
 }
 
 export interface PlanBlock {
@@ -369,9 +372,13 @@ export function planToday(input: PlannerInput): PlannerResult {
     if (last.end - last.start > buffer) slots = subtract(slots, { start: last.end - buffer, end: last.end })
   }
 
+  const orderIndex = new Map((input.preferredOrder ?? []).map((id, index) => [id, index]))
   const candidates = input.tasks
     .filter(task => ['inbox', 'planned', 'deferred'].includes(task.status))
     .sort((a, b) => {
+      const ao = orderIndex.get(a.id) ?? Number.POSITIVE_INFINITY
+      const bo = orderIndex.get(b.id) ?? Number.POSITIVE_INFINITY
+      if (ao !== bo) return ao - bo
       const ad = a.deadlineAt === undefined ? Infinity : Date.parse(a.deadlineAt)
       const bd = b.deadlineAt === undefined ? Infinity : Date.parse(b.deadlineAt)
       return ad - bd || importanceRank(a.importance) - importanceRank(b.importance) || Number(a.splittable) - Number(b.splittable) || (a.targetDurationMinutes ?? Infinity) - (b.targetDurationMinutes ?? Infinity) || a.id.localeCompare(b.id)
@@ -462,6 +469,7 @@ export function replanToday(input: ReplanInput): ReplanResult {
     settings: input.settings,
     tasks: input.tasks.filter(task => !protectedIds.has(task.id)),
     fixedBlocks: [...input.fixedBlocks, ...protectedFixed],
+    preferredOrder: input.preferredOrder,
   })
   const planBlocks = [...planned.planBlocks]
   for (const task of input.tasks) {

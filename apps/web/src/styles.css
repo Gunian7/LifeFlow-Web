@@ -59,6 +59,25 @@ html.custom-bg-on body[data-theme='archive-terminal'] { background-image: none; 
 .api-field .label { margin-bottom: 6px; }
 .api-field input { width: 100%; border: 1px solid var(--line); border-radius: 5px; padding: 11px 12px; background: var(--surface); color: var(--text); outline: 0; font: inherit; }
 .api-field input:focus { border-color: var(--accent); }
+.planner-form { display: flex; flex-direction: column; gap: 12px; }
+.planner-form label { display: flex; align-items: center; gap: 10px; color: var(--secondary); font-size: 13px; }
+.planner-form input[type='time'], .planner-form input[type='number'] { border: 1px solid var(--line); border-radius: 5px; padding: 8px 10px; background: var(--surface); color: var(--text); font: inherit; }
+.planner-form input[type='checkbox'] { width: 16px; height: 16px; accent-color: var(--accent); }
+.planner-form span { color: var(--tertiary); font-size: 12px; }
+.importance-badge { margin-left: 8px; padding: 2px 8px; border: 1px solid var(--danger-line); border-radius: 999px; color: var(--error); font-size: 11px; white-space: nowrap; }
+.ai-adopted { margin-bottom: 12px; }
+
+.focus-mode { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; background: color-mix(in srgb, var(--bg) 90%, transparent); backdrop-filter: blur(14px); }
+.focus-task { margin: 0; color: var(--secondary); font-size: 14px; }
+.breath-ring { position: relative; width: 260px; height: 260px; }
+.breath-ring svg { width: 100%; height: 100%; animation: breathe 4s ease-in-out infinite; transform-origin: center; }
+.breath-ring.is-paused svg { animation-play-state: paused; }
+@keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.045); } }
+.ring-track { fill: none; stroke: var(--line); stroke-width: 6; }
+.ring-progress { fill: none; stroke: var(--accent); stroke-width: 6; stroke-linecap: round; transform: rotate(-90deg); transform-origin: center; transition: stroke-dashoffset 1s linear; }
+.focus-timer-big { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; margin: 0; color: var(--text); font: 44px/1 monospace; font-variant-numeric: tabular-nums; }
+.focus-actions { display: flex; align-items: center; gap: 18px; }
+.focus-note { margin: 0; color: var(--tertiary); font-size: 12px; }
 button, input, textarea { font: inherit; }
 button { cursor: pointer; }
 

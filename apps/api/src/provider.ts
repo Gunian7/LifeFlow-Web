@@ -1,4 +1,4 @@
-import type { OrderProvider, OrderTask } from './order'
+import type { OrderContext, OrderProvider, OrderTask } from './order'
 
 export interface ProviderOptions {
   apiKey: string
@@ -13,11 +13,14 @@ interface CompletionResponse {
 
 export function createOpenAiCompatibleProvider(options: ProviderOptions): OrderProvider {
   const fetcher = options.fetcher ?? fetch
-  return async (tasks: OrderTask[]): Promise<string> => {
+  return async (tasks: OrderTask[], context: OrderContext): Promise<string> => {
     const prompt = [
+      'You are helping order today\'s tasks for a calm, realistic day planner.',
+      'Consider importance (must > important > want), each task\'s duration, and how much usable time remains before the day ends.',
+      'Put must-do tasks first. If everything cannot realistically fit the remaining time, order them so the most important work happens first; do not pretend it all fits.',
       'Return JSON only with this exact shape: {"order":[task ids in preferred order],"reason":"brief explanation"}.',
       'Do not create, delete, rename, or modify tasks. Include every id exactly once.',
-      JSON.stringify(tasks),
+      JSON.stringify({ tasks, context }),
     ].join('\n')
     let response: Response
     try {

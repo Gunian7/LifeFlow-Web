@@ -56,6 +56,15 @@ describe('LifeFlow AI order endpoint', () => {
     expect(response.status).toBe(200)
   })
 
+  it('passes scheduling context to the provider and drops unknown fields', async () => {
+    const provider: OrderProvider = vi.fn(async (_tasks, context) => {
+      expect(context).toEqual({ now: '2026-08-30T03:00:00.000Z', windowEndLocalTime: '23:30' })
+      return JSON.stringify({ order: ['report', 'walk'], reason: '按剩余时间安排。' })
+    })
+    const response = await request({ ...validBody, context: { now: '2026-08-30T03:00:00.000Z', windowEndLocalTime: '23:30', junk: true } }, provider)
+    expect(response.status).toBe(200)
+  })
+
   it('does not echo an upstream failure body', async () => {
     const provider: OrderProvider = vi.fn(async () => { throw new Error('secret upstream body') })
     const response = await request(validBody, provider)
