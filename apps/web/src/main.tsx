@@ -727,8 +727,11 @@ function App() {
       <header className="header">
         <div>
           <p className="eyebrow">LIFEFLOW</p>
-          <h1>{tagline.text}</h1>
-          <p className="date">{today}{tagline.from ? ` · ${tagline.from}` : ''}</p>
+          <div className="tagline-block">
+            <h1>{tagline.text}</h1>
+            {tagline.from && <span className="tagline-from">——{tagline.from}</span>}
+          </div>
+          <p className="date">{today}</p>
         </div>
         <div className="header-actions">
           <label className="theme-control"><span>皮肤</span><select aria-label="切换皮肤" value={themeId} onChange={(event) => setThemeId(event.target.value as ThemeId)}>{themeIds.map((id) => <option value={id} key={id}>{getTheme(id).name}</option>)}</select></label>

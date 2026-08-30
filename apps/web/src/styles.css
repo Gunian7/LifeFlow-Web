@@ -107,6 +107,8 @@ button { cursor: pointer; }
 .eyebrow, .label { margin: 0; color: var(--tertiary); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
 h1 { margin: 8px 0 6px; font-size: clamp(32px, 4vw, 40px); font-weight: var(--heading-weight); letter-spacing: -.03em; }
 .date { margin: 0; color: var(--secondary); font-size: 14px; }
+.tagline-block { position: relative; padding-bottom: 18px; }
+.tagline-from { position: absolute; right: 4px; bottom: 0; color: var(--tertiary); font-size: 12px; letter-spacing: .06em; }
 .header-actions { display: flex; gap: 20px; }
 .theme-control { display: flex; align-items: center; gap: 7px; color: var(--secondary); font-size: 12px; }
 .theme-control select { border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 8px; background: var(--surface); color: var(--text); font: inherit; }
@@ -130,15 +132,20 @@ h2 { margin: 7px 0 0; font-size: 21px; font-weight: var(--heading-weight); lette
 .timeline { position: relative; border-top: 1px solid var(--line); }
 .task-row { display: grid; grid-template-columns: 48px 24px minmax(0, 1fr) auto auto; align-items: center; gap: 10px; min-height: 82px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: inherit; text-align: left; transition: background 180ms ease-out; }
 .task-row:hover { background: color-mix(in srgb, var(--surface) 42%, transparent); }
-.task-row.is-current { background: var(--current-surface); }
+.task-row.is-current { background: var(--current-surface); animation: current-glow 3.2s ease-in-out infinite; }
+@keyframes current-glow { 0%, 100% { background: var(--current-surface); } 50% { background: color-mix(in srgb, var(--accent-soft) 55%, var(--surface)); } }
 body[data-theme='archive-terminal'] .task-row.is-current { background: color-mix(in srgb, var(--surface) 18%, transparent); }
 .row-time { color: var(--secondary); font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
 .task-row.is-current .row-time { color: var(--accent); font-weight: 500; }
 .row-rail { position: relative; align-self: stretch; display: flex; align-items: center; justify-content: center; }
 .row-rail::before { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--line); }
 .rail-dot { position: relative; width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--secondary); background: var(--bg); }
-.rail-dot.is-now { border-color: var(--accent); background: var(--accent); }
-.now-chip { position: absolute; top: calc(50% - 26px); left: 50%; transform: translateX(-50%); padding: 1px 6px; border-radius: 999px; background: var(--accent); color: var(--selection-text); font-size: 10px; white-space: nowrap; }
+.rail-dot.is-now { border-color: var(--accent); background: var(--accent); animation: now-pulse 2s ease-in-out infinite; }
+@keyframes now-pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); } 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 10%, transparent); } }
+.now-chip { position: absolute; top: calc(50% - 26px); left: 50%; transform: translateX(-50%); padding: 1px 6px; border-radius: 999px; background: var(--accent); color: var(--selection-text); font-size: 10px; white-space: nowrap; animation: now-pulse 2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .rail-dot.is-now, .now-chip, .task-row.is-current { animation: none; }
+}
 .task-side { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; color: var(--tertiary); font-size: 11px; }
 .task-main { display: flex; min-width: 0; flex: 1; align-items: center; gap: 14px; border: 0; background: transparent; color: inherit; text-align: left; }
 .task-check { flex: 0 0 auto; width: 18px; height: 18px; border: 1px solid var(--tertiary); border-radius: 50%; }
