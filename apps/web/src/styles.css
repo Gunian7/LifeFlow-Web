@@ -78,6 +78,12 @@ html.custom-bg-on body[data-theme='archive-terminal'] { background-image: none; 
 .focus-timer-big { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; margin: 0; color: var(--text); font: 44px/1 monospace; font-variant-numeric: tabular-nums; }
 .focus-actions { display: flex; align-items: center; gap: 18px; }
 .focus-note { margin: 0; color: var(--tertiary); font-size: 12px; }
+
+.mic-button { flex: 0 0 auto; width: 42px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--secondary); font-size: 15px; line-height: 1; transition: border-color 180ms ease-out, color 180ms ease-out; }
+.mic-button:hover { border-color: var(--accent); color: var(--accent); }
+.mic-button.listening { border-color: var(--accent); color: var(--accent); animation: mic-pulse 1.2s ease-in-out infinite; }
+@keyframes mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 35%, transparent); } 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 12%, transparent); } }
+.voice-error { margin: 6px 0 0; color: var(--error); font-size: 12px; }
 button, input, textarea { font: inherit; }
 button { cursor: pointer; }
 

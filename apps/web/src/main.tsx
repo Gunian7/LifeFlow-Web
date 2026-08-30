@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { ExistingPlanBlock, Importance, PlannerTask, StoredTask, TaskDraft, RecurrenceRule, RecurringTemplate, ThemeId } from '../../../packages/core/src'
 import { buildExport, buildTimelineEntries, createTask, createTemplate, defaultTheme, deleteTask, editTask, getTheme, materializeOccurrences, mergeImportedTasks, parseImport, pinTask, replanToday, completeTask, uncompleteTask, unpinTask, themeIds } from '../../../packages/core/src'
 import type { FocusSession } from '../../../packages/core/src/focus'
 import { focusRemainingSeconds, pauseFocus, resumeFocus, startFocus } from '../../../packages/core/src/focus'
 import { CropEditor } from './CropEditor'
+import { speechSupported, useSpeechRecognition } from './speech'
 import './styles.css'
 
 type LocalTask = StoredTask
@@ -224,6 +225,18 @@ function App() {
   const [plannerConfig, setPlannerConfig] = useState<PlannerConfig>(loadPlannerConfig)
   const [preferredOrder, setPreferredOrder] = useState<string[] | null>(null)
   const [editImportance, setEditImportance] = useState<Importance>('important')
+  const [voiceSupported] = useState(speechSupported)
+  const voiceBaseRef = useRef('')
+  const handleVoiceText = useCallback((chunk: string, finalText: string) => {
+    setTitle(voiceBaseRef.current + finalText + chunk)
+  }, [])
+  const { listening: voiceListening, error: voiceError, start: startVoice, stop: stopVoice } = useSpeechRecognition(handleVoiceText)
+
+  function toggleVoice() {
+    if (voiceListening) { stopVoice(); return }
+    voiceBaseRef.current = title
+    startVoice()
+  }
 
   useEffect(() => {
     localStorage.setItem(PLANNER_KEY, JSON.stringify(plannerConfig))
@@ -693,8 +706,10 @@ function App() {
         <input value={title} onChange={(event) => setTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addTask() }} placeholder="加一件事" aria-label="加一件事" />
         <input className="minutes-input" value={minutes} onChange={(event) => setMinutes(event.target.value)} aria-label="预计分钟" inputMode="numeric" />
         <span className="minutes-label">分</span>
+        {voiceSupported && <button className={`mic-button ${voiceListening ? 'listening' : ''}`} type="button" aria-label={voiceListening ? '停止听写' : '语音输入'} title={voiceListening ? '停止听写' : '语音输入'} onClick={toggleVoice}>🎙</button>}
         <button className="add-button" type="button" onClick={addTask}>加</button>
       </section>
+      {voiceError && <p className="voice-error">{voiceError === 'not-allowed' ? '需要麦克风权限才能听写。' : voiceError === 'network' ? '语音服务暂时不可用，检查网络后重试。' : '没听清，再试一次。'}</p>}
 
       {editingTask && <section className="edit-card" aria-label="编辑任务">
         <div className="edit-heading"><p className="label">编辑任务</p><span className="edit-heading-actions"><button className="link-button danger-link" type="button" onClick={() => removeTask(editingTask.id)}>删除这件事</button><button className="link-button" type="button" onClick={() => setEditingTask(null)}>取消</button></span></div>
