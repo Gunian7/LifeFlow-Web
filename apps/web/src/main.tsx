@@ -5,6 +5,9 @@ import { buildExport, buildTimelineEntries, completedThisWeek, createTask, creat
 import type { FocusSession } from '../../../packages/core/src/focus'
 import { focusRemainingSeconds, pauseFocus, resumeFocus, startFocus } from '../../../packages/core/src/focus'
 import { CropEditor } from './CropEditor'
+import { FocusView } from './components/FocusView'
+import { SettingsPage } from './components/SettingsPage'
+import type { SettingsSection } from './components/SettingsPage'
 import { speechSupported, useSpeechRecognition } from './speech'
 import './styles.css'
 
@@ -237,15 +240,7 @@ function App() {
   const [editNotes, setEditNotes] = useState('')
   const [editError, setEditError] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [settingsSection, setSettingsSection] = useState<'appearance' | 'planning' | 'repeat' | 'data' | 'ai' | 'about'>('appearance')
-  const settingsItems: Array<{ id: 'appearance' | 'planning' | 'repeat' | 'data' | 'ai' | 'about'; label: string }> = [
-    { id: 'appearance', label: '外观' },
-    { id: 'planning', label: '计划' },
-    { id: 'repeat', label: '重复' },
-    { id: 'data', label: '数据' },
-    { id: 'ai', label: 'AI 与服务' },
-    { id: 'about', label: '关于 LifeFlow' },
-  ]
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('appearance')
   const [themeId, setThemeId] = useState<ThemeId>(() => getTheme(localStorage.getItem(THEME_KEY) ?? undefined).id)
   const theme = getTheme(themeId)
   const [importNotice, setImportNotice] = useState('')
@@ -779,54 +774,41 @@ function App() {
   if (focusSession) {
     const focusTask = tasks.find((task) => task.id === focusSession.taskId)
     const remaining = focusRemainingSeconds(focusSession, new Date().toISOString())
-    const total = Math.max(1, focusSession.durationMinutes * 60)
-    const progress = Math.min(1, Math.max(0, 1 - remaining / total))
-    const ringLength = 2 * Math.PI * 120
     return (
       <>
         {backgroundLayers}
-        <main className="focus-mode" aria-label="专注中">
-          <p className="focus-task">正在做：{focusTask?.title ?? '一件事'}</p>
-          <div className={`breath-ring ${focusSession.state === 'paused' ? 'is-paused' : ''}`}>
-            <svg viewBox="0 0 260 260" aria-hidden="true">
-              <circle className="ring-track" cx="130" cy="130" r="120" />
-              <circle className="ring-progress" cx="130" cy="130" r="120" strokeDasharray={ringLength} strokeDashoffset={ringLength * (1 - progress)} />
-            </svg>
-            <p className="focus-timer-big">{Math.floor(remaining / 60).toString().padStart(2, '0')}:{(remaining % 60).toString().padStart(2, '0')}</p>
-          </div>
-          <div className="focus-actions">
-            <button className="secondary-button" type="button" onClick={toggleFocus}>{focusSession.state === 'running' ? '暂停' : '继续'}</button>
-            <button className="link-button" type="button" onClick={endFocus}>结束专注</button>
-          </div>
-          <p className="focus-note">这段时间本身就是计划的一部分。</p>
-        </main>
+        <FocusView session={focusSession} taskTitle={focusTask?.title ?? '一件事'} remaining={remaining} onPauseToggle={toggleFocus} onEnd={endFocus} />
       </>
     )
   }
 
+  const appearanceSection = <section className="settings-section" aria-label="外观设置"><p className="label">APPEARANCE / 外观</p><h2>视觉皮肤</h2><p className="settings-copy">皮肤只改变表现方式，不改变任务、计划规则或数据归属。</p><div className="theme-picker">{themeIds.map((id) => { const option = getTheme(id); return <button className={`theme-option ${themeId === id ? 'selected' : ''}`} type="button" key={id} onClick={() => setThemeId(id)}><span className="theme-swatch" style={{ background: option.tokens.background, borderColor: option.tokens.accent }} /><span><strong>{option.name}</strong><small>{option.description}</small></span></button> })}</div><div className="bg-picker"><p className="label">背景图</p><p className="settings-copy">用一张自己的图片做页面背景。上传后拖动裁剪框决定画面，缩放滑杆控制取景范围；模糊和遮罩帮文字保持可读。它只影响外观，不影响任务数据。</p>{background.dataUrl && <div className="bg-preview" style={{ backgroundImage: `url(${background.dataUrl})` }} aria-hidden="true" />}<input ref={bgInputRef} className="file-input" type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) handleBackgroundFile(file); event.currentTarget.value = '' }} /><div className="settings-actions"><button className="secondary-button" type="button" onClick={() => bgInputRef.current?.click()}>选择图片</button>{background.dataUrl && <button className="secondary-button" type="button" onClick={() => setCropOpen(true)}>裁剪画面</button>}{background.dataUrl && <button className="secondary-button" type="button" onClick={resetBackgroundParams}>恢复默认参数</button>}{background.dataUrl && <button className="secondary-button" type="button" onClick={removeBackgroundImage}>移除背景图</button>}</div>{cropOpen && background.dataUrl && <CropEditor dataUrl={background.dataUrl} aspect={window.innerWidth / window.innerHeight} onApply={(cropped) => { setBackground((current) => ({ ...current, dataUrl: cropped })); setCropOpen(false) }} onCancel={() => setCropOpen(false)} />}{background.dataUrl && !cropOpen && <div className="bg-controls"><label>模糊<input type="range" min={0} max={24} value={background.blur} onChange={(event) => updateBackground({ blur: Number(event.target.value) })} /><span>{background.blur}px</span></label><label>遮罩<input type="range" min={0} max={85} value={background.dim} onChange={(event) => updateBackground({ dim: Number(event.target.value) })} /><span>{background.dim}%</span></label><label>饱和度<input type="range" min={0} max={200} value={background.saturate} onChange={(event) => updateBackground({ saturate: Number(event.target.value) })} /><span>{background.saturate}%</span></label></div>}{bgNotice && <p className="import-notice">{bgNotice}</p>}</div></section>
   if (settingsOpen) return (
     <>
       {backgroundLayers}
-      <main className="shell settings-page">
-      <header className="header">
-        <div><p className="eyebrow">LIFEFLOW / SYSTEM</p><h1>设置</h1><p className="date">调整 LifeFlow 的工作方式</p></div>
-        <button className="ghost-button back-plan" type="button" onClick={() => setSettingsOpen(false)}>返回计划</button>
-      </header>
-      <section className="settings-workspace" aria-label="设置工作区">
-        <nav className="settings-nav" aria-label="设置分类">
-          <p className="settings-nav-title">SYSTEM</p>
-          {settingsItems.map((item) => <button className={`settings-nav-item ${settingsSection === item.id ? 'selected' : ''}`} type="button" key={item.id} onClick={() => setSettingsSection(item.id)}>{item.label}<span aria-hidden="true">›</span></button>)}
-        </nav>
-        <div className="settings-content">
-          {settingsSection === 'appearance' && <section className="settings-section" aria-label="外观设置"><p className="label">APPEARANCE / 外观</p><h2>视觉皮肤</h2><p className="settings-copy">皮肤只改变表现方式，不改变任务、计划规则或数据归属。</p><div className="theme-picker">{themeIds.map((id) => { const option = getTheme(id); return <button className={`theme-option ${themeId === id ? 'selected' : ''}`} type="button" key={id} onClick={() => setThemeId(id)}><span className="theme-swatch" style={{ background: option.tokens.background, borderColor: option.tokens.accent }} /><span><strong>{option.name}</strong><small>{option.description}</small></span></button> })}</div><div className="bg-picker"><p className="label">背景图</p><p className="settings-copy">用一张自己的图片做页面背景。上传后拖动裁剪框决定画面，缩放滑杆控制取景范围；模糊和遮罩帮文字保持可读。它只影响外观，不影响任务数据。</p>{background.dataUrl && <div className="bg-preview" style={{ backgroundImage: `url(${background.dataUrl})` }} aria-hidden="true" />}<input ref={bgInputRef} className="file-input" type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) handleBackgroundFile(file); event.currentTarget.value = '' }} /><div className="settings-actions"><button className="secondary-button" type="button" onClick={() => bgInputRef.current?.click()}>选择图片</button>{background.dataUrl && <button className="secondary-button" type="button" onClick={() => setCropOpen(true)}>裁剪画面</button>}{background.dataUrl && <button className="secondary-button" type="button" onClick={resetBackgroundParams}>恢复默认参数</button>}{background.dataUrl && <button className="secondary-button" type="button" onClick={removeBackgroundImage}>移除背景图</button>}</div>{cropOpen && background.dataUrl && <CropEditor dataUrl={background.dataUrl} aspect={window.innerWidth / window.innerHeight} onApply={(cropped) => { setBackground((current) => ({ ...current, dataUrl: cropped })); setCropOpen(false) }} onCancel={() => setCropOpen(false)} />}{background.dataUrl && !cropOpen && <div className="bg-controls"><label>模糊<input type="range" min={0} max={24} value={background.blur} onChange={(event) => updateBackground({ blur: Number(event.target.value) })} /><span>{background.blur}px</span></label><label>遮罩<input type="range" min={0} max={85} value={background.dim} onChange={(event) => updateBackground({ dim: Number(event.target.value) })} /><span>{background.dim}%</span></label><label>饱和度<input type="range" min={0} max={200} value={background.saturate} onChange={(event) => updateBackground({ saturate: Number(event.target.value) })} /><span>{background.saturate}%</span></label></div>}{bgNotice && <p className="import-notice">{bgNotice}</p>}</div></section>}
-          {settingsSection === 'planning' && <section className="settings-section" aria-label="计划设置"><p className="label">PLANNING / 计划</p><h2>今天的时间</h2><p className="settings-copy">下面的默认值只是示例，按你的现实来改。排程用这里的时间决定可用窗口、缓冲和休息；AI 也会参考它。</p><div className="planner-form"><label>可用时段从<input type="time" value={plannerConfig.start} onChange={(event) => { if (validTime(event.target.value)) updatePlanner({ start: event.target.value }) }} />到<input type="time" value={plannerConfig.end} onChange={(event) => { if (validTime(event.target.value)) updatePlanner({ end: event.target.value }) }} /></label><label>每日缓冲<input type="number" min={0} max={300} value={plannerConfig.bufferMinutes} onChange={(event) => updatePlanner({ bufferMinutes: Number(event.target.value) })} /><span>分钟</span></label><label className="checkbox-line"><input type="checkbox" checked={plannerConfig.restEnabled} onChange={(event) => updatePlanner({ restEnabled: event.target.checked })} />保护休息时段</label>{plannerConfig.restEnabled && <label>休息从<input type="time" value={plannerConfig.restStart} onChange={(event) => { if (validTime(event.target.value)) updatePlanner({ restStart: event.target.value }) }} />到<input type="time" value={plannerConfig.restEnd} onChange={(event) => { if (validTime(event.target.value)) updatePlanner({ restEnd: event.target.value }) }} /></label>}</div></section>}
-          {settingsSection === 'repeat' && <section className="settings-section" aria-label="重复任务设置"><p className="label">REPEAT / 重复</p><h2>重复任务</h2><p className="settings-copy">暂停的模板不再生成新任务，随时恢复；删除模板不影响已经生成的任务。</p>{templates.length === 0 && <p className="settings-copy">还没有重复任务。在编辑或添加任务时选择"每天"或"每周"就能创建。</p>}{templates.map((template) => <div className="template-row" key={template.id}><span className="template-title">{template.title}{template.paused && <small>已暂停</small>}</span><small className="template-rule">{ruleText(template.rule)}</small><span className="decision-actions">{template.paused ? <button className="link-button" type="button" onClick={() => setTemplates((current) => current.map((item) => item.id === template.id ? { ...item, paused: false } : item))}>恢复</button> : <button className="link-button" type="button" onClick={() => setTemplates((current) => current.map((item) => item.id === template.id ? { ...item, paused: true } : item))}>暂停</button>}<button className="link-button" type="button" onClick={() => { if (window.confirm('删除这条重复规则？已生成的任务会保留。')) setTemplates((current) => current.filter((item) => item.id !== template.id)) }}>删除</button></span></div>)}</section>}
-          {settingsSection === 'data' && <section className="settings-section" aria-label="数据设置"><p className="label">DATA / 数据</p><h2>本地数据</h2><p className="settings-copy">任务保存在这台设备的浏览器里。没有账号，也不会自动上传。导入时，相同任务会保留更新时间较新的一份。</p><input ref={importInputRef} className="file-input" type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) importData(file); event.currentTarget.value = '' }} /><div className="settings-actions"><button className="secondary-button" type="button" onClick={exportData}>导出数据</button><button className="secondary-button" type="button" onClick={() => importInputRef.current?.click()}>导入数据</button><button className="danger-button" type="button" onClick={deleteAllData}>删除全部数据</button></div>{importNotice && <p className="import-notice">{importNotice}</p>}</section>}
-          {settingsSection === 'ai' && <section className="settings-section" aria-label="AI 与服务设置"><p className="label">AI / AI 与服务</p><h2>AI 顾问</h2><p className="settings-copy">AI 建议会在你明确请求时使用。它只能提供顺序建议，不能替代本地 Planner，也不会自动修改你的计划。</p><p className="settings-copy">也可以接入自己的后端：只要提供 GET /health 和 POST /v1/ai/order（返回的顺序必须恰好包含每个任务 id 一次，并附一句理由），LifeFlow 就把请求发到你的服务。</p><div className="api-field"><p className="label">服务地址</p><input value={apiDraft} onChange={(event) => setApiDraft(event.target.value)} placeholder={API_URL} aria-label="后端服务地址" /></div><div className="settings-actions"><button className="secondary-button" type="button" onClick={saveApiConfig}>保存</button><button className="secondary-button" type="button" onClick={testApiConnection} disabled={apiTesting}>测试连接</button></div>{apiNotice && <p className="import-notice" style={{ color: apiNoticeTone === 'ok' ? 'var(--success)' : apiNoticeTone === 'fail' ? 'var(--error)' : undefined }}>{apiNotice}</p>}</section>}
-          {settingsSection === 'about' && <section className="settings-section settings-placeholder" aria-label="关于 LifeFlow"><p className="label">ABOUT / 关于</p><h2>LifeFlow</h2><p className="settings-copy">一个帮助你重新进入生活的现实型时间规划工具。</p><span className="muted">本地优先 · 无需登录 · 计划可解释</span></section>}
-        </div>
-      </section>
-    </main>
+      <SettingsPage
+        section={settingsSection}
+        onSectionChange={setSettingsSection}
+        onBack={() => setSettingsOpen(false)}
+        appearanceSection={appearanceSection}
+        planner={plannerConfig}
+        onPlannerChange={updatePlanner}
+        templates={templates}
+        onTemplatesChange={setTemplates}
+        apiDraft={apiDraft}
+        onApiDraftChange={setApiDraft}
+        apiNotice={apiNotice}
+        apiNoticeTone={apiNoticeTone}
+        apiTesting={apiTesting}
+        defaultApiUrl={API_URL}
+        onApiSave={saveApiConfig}
+        onApiTest={testApiConnection}
+        importNotice={importNotice}
+        importInputRef={importInputRef}
+        onExport={exportData}
+        onImport={importData}
+        onDeleteAll={deleteAllData}
+      />
     </>
   )
 
