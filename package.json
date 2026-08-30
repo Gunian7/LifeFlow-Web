@@ -12,18 +12,18 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "latest",
     "hono": "^4.13.5",
-    "react": "latest",
-    "react-dom": "latest",
-    "typescript": "latest",
-    "vite": "latest"
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260829.1",
-    "@types/react": "latest",
-    "@types/react-dom": "latest",
-    "jsdom": "latest",
-    "vitest": "latest"
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "^6.1.1",
+    "jsdom": "^30.0.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
   }
 }

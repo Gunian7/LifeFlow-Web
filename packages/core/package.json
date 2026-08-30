@@ -1,0 +1,8 @@
+{
+  "name": "@lifeflow/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LifeFlow's platform-agnostic planning rules: pure functions, no DOM, no network.",
+  "type": "module",
+  "main": "./src/index.ts"
+}

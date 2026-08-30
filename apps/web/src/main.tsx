@@ -205,6 +205,24 @@ function loadPlannerConfig(): PlannerConfig {  try {
   }
 }
 
+// The service worker claims clients as soon as a new version is installed;
+// surface that so the user can reload into the fresh build instead of
+// silently staying on the old one until the next visit.
+function useAppUpdate(): boolean {
+  const [updateReady, setUpdateReady] = useState(false)
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return
+    let hadController = Boolean(navigator.serviceWorker.controller)
+    const onChange = () => {
+      if (hadController) setUpdateReady(true)
+      hadController = true
+    }
+    navigator.serviceWorker.addEventListener('controllerchange', onChange)
+    return () => navigator.serviceWorker.removeEventListener('controllerchange', onChange)
+  }, [])
+  return updateReady
+}
+
 function App() {
   const [tasks, setTasks] = useState<LocalTask[]>(loadTasks)
   const [existingBlocks, setExistingBlocks] = useState<ExistingPlanBlock[]>(loadPlan)
@@ -434,6 +452,7 @@ function App() {
   const timelineEntries = buildTimelineEntries(plan.planBlocks, plannerInput.settings)
   const changeCount = plan.changes.length
   const todayStr = localDate(now)
+  const updateReady = useAppUpdate()
   const tomorrowStr = localDate(new Date(Date.parse(now) + 86400000).toISOString())
   const tomorrowTasks = tasks.filter((task) => !task.done && task.deferredUntil !== undefined && task.deferredUntil > todayStr)
   const timelineRows = [...timelineEntries, ...blocks.filter((block) => localDate(block.startAt) === todayStr).map((block) => ({ kind: 'block' as const, title: block.title, startAt: block.startAt, endAt: block.endAt }))].sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt))
@@ -814,6 +833,7 @@ function App() {
   return (
     <>
       {backgroundLayers}
+      {updateReady && <div className="update-toast"><span>LifeFlow 更新好了，刷新一下就能用上新版。</span><button className="secondary-button" type="button" onClick={() => location.reload()}>刷新</button></div>}
       <main className="shell">
       <header className="header">
         <div>
