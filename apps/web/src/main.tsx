@@ -4,6 +4,7 @@ import type { ExistingPlanBlock, PlannerTask, StoredTask, TaskDraft, RecurrenceR
 import { buildExport, buildTimelineEntries, createTask, createTemplate, defaultTheme, deleteTask, editTask, getTheme, materializeOccurrences, mergeImportedTasks, parseImport, pinTask, replanToday, completeTask, uncompleteTask, unpinTask, themeIds } from '../../../packages/core/src'
 import type { FocusSession } from '../../../packages/core/src/focus'
 import { focusRemainingSeconds, pauseFocus, resumeFocus, startFocus } from '../../../packages/core/src/focus'
+import { CropEditor } from './CropEditor'
 import './styles.css'
 
 type LocalTask = StoredTask
@@ -65,8 +66,8 @@ function formatFocusRemaining(session: FocusSession): string {
   return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`
 }
 
-interface BackgroundConfig { dataUrl: string; blur: number; dim: number; saturate: number; focusX: number; focusY: number; zoom: number }
-const DEFAULT_BG: BackgroundConfig = { dataUrl: '', blur: 6, dim: 40, saturate: 100, focusX: 50, focusY: 50, zoom: 100 }
+interface BackgroundConfig { dataUrl: string; blur: number; dim: number; saturate: number }
+const DEFAULT_BG: BackgroundConfig = { dataUrl: '', blur: 6, dim: 40, saturate: 100 }
 
 function normalizeBaseUrl(value: string): string | null {
   const trimmed = value.trim().replace(/\/+$/, '')
@@ -100,9 +101,6 @@ function loadBackground(): BackgroundConfig {
       blur: clampParam(parsed.blur, 0, 24, DEFAULT_BG.blur),
       dim: clampParam(parsed.dim, 0, 85, DEFAULT_BG.dim),
       saturate: clampParam(parsed.saturate, 0, 200, DEFAULT_BG.saturate),
-      focusX: clampParam(parsed.focusX, 0, 100, DEFAULT_BG.focusX),
-      focusY: clampParam(parsed.focusY, 0, 100, DEFAULT_BG.focusY),
-      zoom: clampParam(parsed.zoom, 100, 300, DEFAULT_BG.zoom),
     }
   } catch {
     return DEFAULT_BG
@@ -181,6 +179,7 @@ function App() {
   const [apiTesting, setApiTesting] = useState(false)
   const [background, setBackground] = useState<BackgroundConfig>(loadBackground)
   const [bgNotice, setBgNotice] = useState('')
+  const [cropOpen, setCropOpen] = useState(false)
   const bgInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
@@ -419,7 +418,8 @@ function App() {
     readImageFile(file)
       .then((dataUrl) => {
         if (dataUrl.length > Math.round(2.5 * 1024 * 1024)) { setBgNotice('图片太大，浏览器存不下，请换一张小一点的。'); return }
-        setBackground((current) => ({ ...current, dataUrl, focusX: DEFAULT_BG.focusX, focusY: DEFAULT_BG.focusY, zoom: DEFAULT_BG.zoom }))
+        setBackground((current) => ({ ...current, dataUrl }))
+        setCropOpen(true)
       })
       .catch(() => setBgNotice('这张图片读取失败，请换一张试试。'))
   }
@@ -429,11 +429,12 @@ function App() {
   }
 
   function resetBackgroundParams() {
-    setBackground((current) => ({ ...current, blur: DEFAULT_BG.blur, dim: DEFAULT_BG.dim, saturate: DEFAULT_BG.saturate, focusX: DEFAULT_BG.focusX, focusY: DEFAULT_BG.focusY, zoom: DEFAULT_BG.zoom }))
+    setBackground((current) => ({ ...current, blur: DEFAULT_BG.blur, dim: DEFAULT_BG.dim, saturate: DEFAULT_BG.saturate }))
   }
 
   function removeBackgroundImage() {
     setBackground(DEFAULT_BG)
+    setCropOpen(false)
     setBgNotice('')
   }
 
@@ -482,6 +483,7 @@ function App() {
     setApiNotice('')
     setBackground(DEFAULT_BG)
     setBgNotice('')
+    setCropOpen(false)
     setSettingsOpen(false)
   }
 
@@ -522,9 +524,7 @@ function App() {
 
   const backgroundLayers = background.dataUrl ? (
     <>
-      <div className="custom-bg-image" aria-hidden="true">
-        <img src={background.dataUrl} alt="" style={{ objectPosition: `${background.focusX}% ${background.focusY}%`, transform: `scale(${background.zoom / 100})`, transformOrigin: `${background.focusX}% ${background.focusY}%`, filter: `blur(${background.blur}px) saturate(${background.saturate}%)` }} />
-      </div>
+      <div className="custom-bg-image" aria-hidden="true" style={{ backgroundImage: `url(${background.dataUrl})`, filter: `blur(${background.blur}px) saturate(${background.saturate}%)` }} />
       <div className="custom-bg-scrim" aria-hidden="true" style={{ opacity: background.dim / 100 }} />
     </>
   ) : null
@@ -543,7 +543,7 @@ function App() {
           {settingsItems.map((item) => <button className={`settings-nav-item ${settingsSection === item.id ? 'selected' : ''}`} type="button" key={item.id} onClick={() => setSettingsSection(item.id)}>{item.label}<span aria-hidden="true">›</span></button>)}
         </nav>
         <div className="settings-content">
-          {settingsSection === 'appearance' && <section className="settings-section" aria-label="外观设置"><p className="label">APPEARANCE / 外观</p><h2>视觉皮肤</h2><p className="settings-copy">皮肤只改变表现方式，不改变任务、计划规则或数据归属。</p><div className="theme-picker">{themeIds.map((id) => { const option = getTheme(id); return <button className={`theme-option ${themeId === id ? 'selected' : ''}`} type="button" key={id} onClick={() => setThemeId(id)}><span className="theme-swatch" style={{ background: option.tokens.background, borderColor: option.tokens.accent }} /><span><strong>{option.name}</strong><small>{option.description}</small></span></button> })}</div><div className="bg-picker"><p className="label">背景图</p><p className="settings-copy">用一张自己的图片做页面背景。点击预览图挑选想重点保留的区域，配合缩放进一步裁剪画面；模糊和遮罩帮文字保持可读。它只影响外观，不影响任务数据。</p>{background.dataUrl && <div className="bg-preview" role="button" tabIndex={0} aria-label="点击选择背景重点区域" title="点击预览图，选择想让背景重点显示的区域" onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); const focusX = Math.round(Math.min(100, Math.max(0, ((event.clientX - rect.left) / rect.width) * 100))); const focusY = Math.round(Math.min(100, Math.max(0, ((event.clientY - rect.top) / rect.height) * 100))); updateBackground({ focusX, focusY }) }} style={{ backgroundImage: `url(${background.dataUrl})`, backgroundPosition: `${background.focusX}% ${background.focusY}%` }} aria-hidden="true" />}<input ref={bgInputRef} className="file-input" type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) handleBackgroundFile(file); event.currentTarget.value = '' }} /><div className="settings-actions"><button className="secondary-button" type="button" onClick={() => bgInputRef.current?.click()}>选择图片</button>{background.dataUrl && <button className="secondary-button" type="button" onClick={resetBackgroundParams}>恢复默认参数</button>}{background.dataUrl && <button className="secondary-button" type="button" onClick={removeBackgroundImage}>移除背景图</button>}</div>{background.dataUrl && <div className="bg-controls"><label>模糊<input type="range" min={0} max={24} value={background.blur} onChange={(event) => updateBackground({ blur: Number(event.target.value) })} /><span>{background.blur}px</span></label><label>遮罩<input type="range" min={0} max={85} value={background.dim} onChange={(event) => updateBackground({ dim: Number(event.target.value) })} /><span>{background.dim}%</span></label><label>饱和度<input type="range" min={0} max={200} value={background.saturate} onChange={(event) => updateBackground({ saturate: Number(event.target.value) })} /><span>{background.saturate}%</span></label><label>缩放<input type="range" min={100} max={300} value={background.zoom} onChange={(event) => updateBackground({ zoom: Number(event.target.value) })} /><span>{background.zoom}%</span></label></div>}{bgNotice && <p className="import-notice">{bgNotice}</p>}</div></section>}
+          {settingsSection === 'appearance' && <section className="settings-section" aria-label="外观设置"><p className="label">APPEARANCE / 外观</p><h2>视觉皮肤</h2><p className="settings-copy">皮肤只改变表现方式，不改变任务、计划规则或数据归属。</p><div className="theme-picker">{themeIds.map((id) => { const option = getTheme(id); return <button className={`theme-option ${themeId === id ? 'selected' : ''}`} type="button" key={id} onClick={() => setThemeId(id)}><span className="theme-swatch" style={{ background: option.tokens.background, borderColor: option.tokens.accent }} /><span><strong>{option.name}</strong><small>{option.description}</small></span></button> })}</div><div className="bg-picker"><p className="label">背景图</p><p className="settings-copy">用一张自己的图片做页面背景。上传后拖动裁剪框决定画面，缩放滑杆控制取景范围；模糊和遮罩帮文字保持可读。它只影响外观，不影响任务数据。</p>{background.dataUrl && <div className="bg-preview" style={{ backgroundImage: `url(${background.dataUrl})` }} aria-hidden="true" />}<input ref={bgInputRef} className="file-input" type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) handleBackgroundFile(file); event.currentTarget.value = '' }} /><div className="settings-actions"><button className="secondary-button" type="button" onClick={() => bgInputRef.current?.click()}>选择图片</button>{background.dataUrl && <button className="secondary-button" type="button" onClick={() => setCropOpen(true)}>裁剪画面</button>}{background.dataUrl && <button className="secondary-button" type="button" onClick={resetBackgroundParams}>恢复默认参数</button>}{background.dataUrl && <button className="secondary-button" type="button" onClick={removeBackgroundImage}>移除背景图</button>}</div>{cropOpen && background.dataUrl && <CropEditor dataUrl={background.dataUrl} aspect={window.innerWidth / window.innerHeight} onApply={(cropped) => { setBackground((current) => ({ ...current, dataUrl: cropped })); setCropOpen(false) }} onCancel={() => setCropOpen(false)} />}{background.dataUrl && !cropOpen && <div className="bg-controls"><label>模糊<input type="range" min={0} max={24} value={background.blur} onChange={(event) => updateBackground({ blur: Number(event.target.value) })} /><span>{background.blur}px</span></label><label>遮罩<input type="range" min={0} max={85} value={background.dim} onChange={(event) => updateBackground({ dim: Number(event.target.value) })} /><span>{background.dim}%</span></label><label>饱和度<input type="range" min={0} max={200} value={background.saturate} onChange={(event) => updateBackground({ saturate: Number(event.target.value) })} /><span>{background.saturate}%</span></label></div>}{bgNotice && <p className="import-notice">{bgNotice}</p>}</div></section>}
           {settingsSection === 'data' && <section className="settings-section" aria-label="数据设置"><p className="label">DATA / 数据</p><h2>本地数据</h2><p className="settings-copy">任务保存在这台设备的浏览器里。没有账号，也不会自动上传。导入时，相同任务会保留更新时间较新的一份。</p><input ref={importInputRef} className="file-input" type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) importData(file); event.currentTarget.value = '' }} /><div className="settings-actions"><button className="secondary-button" type="button" onClick={exportData}>导出数据</button><button className="secondary-button" type="button" onClick={() => importInputRef.current?.click()}>导入数据</button><button className="danger-button" type="button" onClick={deleteAllData}>删除全部数据</button></div>{importNotice && <p className="import-notice">{importNotice}</p>}</section>}
           {settingsSection === 'ai' && <section className="settings-section" aria-label="AI 与服务设置"><p className="label">AI / AI 与服务</p><h2>AI 顾问</h2><p className="settings-copy">AI 建议会在你明确请求时使用。它只能提供顺序建议，不能替代本地 Planner，也不会自动修改你的计划。</p><p className="settings-copy">也可以接入自己的后端：只要提供 GET /health 和 POST /v1/ai/order（返回的顺序必须恰好包含每个任务 id 一次，并附一句理由），LifeFlow 就把请求发到你的服务。</p><div className="api-field"><p className="label">服务地址</p><input value={apiDraft} onChange={(event) => setApiDraft(event.target.value)} placeholder={API_URL} aria-label="后端服务地址" /></div><div className="settings-actions"><button className="secondary-button" type="button" onClick={saveApiConfig}>保存</button><button className="secondary-button" type="button" onClick={testApiConnection} disabled={apiTesting}>测试连接</button></div>{apiNotice && <p className="import-notice" style={{ color: apiNoticeTone === 'ok' ? 'var(--success)' : apiNoticeTone === 'fail' ? 'var(--error)' : undefined }}>{apiNotice}</p>}</section>}
           {settingsSection === 'about' && <section className="settings-section settings-placeholder" aria-label="关于 LifeFlow"><p className="label">ABOUT / 关于</p><h2>LifeFlow</h2><p className="settings-copy">一个帮助你重新进入生活的现实型时间规划工具。</p><span className="muted">本地优先 · 无需登录 · 计划可解释</span></section>}

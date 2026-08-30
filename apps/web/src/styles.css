@@ -35,13 +35,22 @@ body[data-theme='archive-terminal'] .header { position: relative; }
 body[data-theme='archive-terminal'] .section-heading h2::before { content: '01 / '; color: var(--tertiary); font: 11px monospace; letter-spacing: .08em; }
 body[data-theme='archive-terminal'] .detail-panel::before { content: 'STATUS // CONTEXT'; display: block; margin-bottom: 14px; padding: 6px 8px; background: var(--accent); color: var(--selection-text); font: 10px monospace; letter-spacing: .12em; }
 
-.custom-bg-image { position: fixed; inset: -40px; z-index: 0; overflow: hidden; pointer-events: none; }
-.custom-bg-image img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.custom-bg-image { position: fixed; inset: -40px; z-index: 0; background-size: cover; background-position: center; pointer-events: none; }
 .custom-bg-scrim { position: fixed; inset: 0; z-index: 0; background: var(--bg); pointer-events: none; }
 html.custom-bg-on, html.custom-bg-on body { background: transparent; }
 html.custom-bg-on body[data-theme='archive-terminal'] { background-image: none; }
 
-.bg-preview { width: 100%; height: 120px; margin: 4px 0 12px; border: 1px solid var(--line); border-radius: var(--radius); background-size: cover; background-repeat: no-repeat; cursor: crosshair; }
+.bg-preview { width: 100%; height: 120px; margin: 4px 0 12px; border: 1px solid var(--line); border-radius: var(--radius); background-size: cover; background-position: center; background-repeat: no-repeat; }
+.crop-editor { margin-top: 14px; }
+.crop-box { position: relative; height: 280px; overflow: hidden; background: #17181a; border: 1px solid var(--line); border-radius: var(--radius); touch-action: none; user-select: none; }
+.crop-stage { position: absolute; }
+.crop-stage img { display: block; width: 100%; height: 100%; }
+.crop-frame { position: absolute; border: 2px solid #fff; box-shadow: 0 0 0 9999px rgba(0, 0, 0, .52); cursor: move; }
+.crop-handle { position: absolute; width: 12px; height: 12px; border: 2px solid #2b2c27; background: #fff; }
+.crop-handle.nw { left: -7px; top: -7px; cursor: nwse-resize; }
+.crop-handle.ne { right: -7px; top: -7px; cursor: nesw-resize; }
+.crop-handle.sw { left: -7px; bottom: -7px; cursor: nesw-resize; }
+.crop-handle.se { right: -7px; bottom: -7px; cursor: nwse-resize; }
 .bg-controls { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
 .bg-controls label { display: flex; align-items: center; gap: 10px; color: var(--secondary); font-size: 13px; }
 .bg-controls input[type='range'] { flex: 1; accent-color: var(--accent); }
