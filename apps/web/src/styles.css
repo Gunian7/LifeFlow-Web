@@ -94,10 +94,12 @@ html.custom-bg-on body[data-theme='archive-terminal'] { background-image: none; 
 .expand-toggle { margin: 6px 0 0; padding: 4px 0; font-size: 12px; }
 .create-card { border-style: dashed; }
 .create-card textarea { width: 100%; resize: vertical; line-height: 1.6; }
-.decision-row { flex-wrap: wrap; row-gap: 4px; }
-.decision-actions { display: flex; align-items: center; gap: 10px; }
+.decision-row { flex-wrap: wrap; row-gap: 6px; }
+.decision-row > span:first-child { flex: 0 0 100%; font-size: 13px; }
+.decision-actions { display: flex; align-items: center; gap: 12px; margin-left: auto; }
 .decision-actions small { color: var(--warning); font-size: 11px; }
-.decision-actions .link-button { padding: 4px 0; font-size: 12px; }
+.decision-actions .link-button { padding: 4px 10px; font-size: 12px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); }
+.decision-actions .link-button:hover { border-color: var(--accent); color: var(--accent); }
 .tomorrow-group { margin-top: 16px; padding-top: 12px; border-top: 1px dashed var(--line); }
 .carryover-card { border-style: dashed; }
 .carryover-list { display: flex; flex-direction: column; }
@@ -160,7 +162,7 @@ body[data-theme='archive-terminal'] .task-row.is-current { background: color-mix
 .rail-dot { position: relative; width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--secondary); background: var(--bg); }
 .rail-dot.is-now { border-color: var(--accent); background: var(--accent); animation: now-pulse 2s ease-in-out infinite; }
 @keyframes now-pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); } 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 10%, transparent); } }
-.now-chip { position: absolute; top: calc(50% - 26px); left: 50%; transform: translateX(-50%); padding: 1px 6px; border-radius: 999px; background: var(--accent); color: var(--selection-text); font-size: 10px; white-space: nowrap; animation: now-pulse 2s ease-in-out infinite; }
+.now-chip { padding: 1px 7px; border-radius: 999px; background: var(--accent); color: var(--selection-text); font-size: 10px; white-space: nowrap; animation: now-pulse 2s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
   .rail-dot.is-now, .now-chip, .task-row.is-current { animation: none; }
 }
