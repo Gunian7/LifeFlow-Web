@@ -661,9 +661,7 @@ function App() {
       <section className="quiet-note"><span className="note-mark">✦</span><p>排不下的时候，我会告诉你原因。<br />不会偷偷吃掉你的休息。</p></section>
       <footer><span>本地保存 · 不需要账号</span><button className="link-button" type="button" onClick={() => setShowAll(true)}>查看全部任务</button></footer>
         </section>
-        <aside className="detail-panel" aria-label="任务详情">
-          {selectedTask ? <DetailPanel task={selectedTask} block={selectedBlock} onOpenEditor={() => openEditor(selectedTask)} onStartFocus={() => startFocusFor(selectedTask)} /> : <p className="detail-empty">选择一件事，查看它为什么出现在这里。</p>}
-        </aside>
+        <DetailPanel task={selectedTask} block={selectedBlock} onOpenEditor={() => { if (selectedTask) openEditor(selectedTask) }} onStartFocus={() => { if (selectedTask) startFocusFor(selectedTask) }} />
       </div>
     </main>
     </>
