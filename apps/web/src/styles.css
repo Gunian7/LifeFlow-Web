@@ -128,7 +128,7 @@ html.custom-bg-on body[data-theme='archive-terminal'] { background-image: none; 
 .ai-parse-toggle { margin: 6px 0 0; }
 .ai-parse-toggle.parsing { color: var(--tertiary); }
 .ai-note { margin: 6px 0 0; color: var(--tertiary); font-size: 12px; }
-.search-input { width: 100%; margin-bottom: 6px; border: 1px solid var(--line); border-radius: 5px; outline: 0; padding: 9px 11px; background: var(--surface); color: var(--text); font: inherit; font-size: 12px; }
+.search-input { width: 100%; margin: 2px 0 20px; border: 1px solid var(--line); border-radius: 5px; outline: 0; padding: 9px 11px; background: var(--surface); color: var(--text); font: inherit; font-size: 12px; }
 .search-input:focus { border-color: var(--accent); }
 .search-card { border-style: dashed; }
 .search-card .deferred-row span:first-child { color: var(--text); }
