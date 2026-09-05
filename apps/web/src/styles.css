@@ -102,11 +102,14 @@ html.custom-bg-on body[data-theme='archive-terminal'] { background-image: none; 
 .decision-actions .link-button:hover { border-color: var(--accent); color: var(--accent); }
 .tomorrow-group { margin-top: 16px; padding-top: 12px; border-top: 1px dashed var(--line); }
 .carryover-card { border-style: dashed; }
-.carryover-list { display: flex; flex-direction: column; }
-.carryover-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px dashed var(--line); color: var(--secondary); font-size: 13px; cursor: pointer; }
-.carryover-row:last-child { border-bottom: 0; }
-.carryover-row input { width: 15px; height: 15px; accent-color: var(--accent); }
-.carryover-row small { color: var(--tertiary); font-size: 11px; }
+.carryover-list { display: flex; flex-direction: column; margin-bottom: 10px; }
+.carryover-row { display: flex; align-items: center; justify-content: flex-start; gap: 12px; min-height: 40px; margin: 0 -6px; padding: 4px 6px; border-radius: 4px; color: var(--secondary); font-size: 13px; cursor: pointer; }
+.carryover-row:hover { background: color-mix(in srgb, var(--surface) 60%, transparent); }
+.carryover-row input { width: 16px; height: 16px; flex: 0 0 auto; margin-bottom: 0; accent-color: var(--accent); }
+.carryover-card .carryover-row input { width: 16px; }
+.carryover-title { flex: 1; min-width: 0; color: var(--text); }
+.carryover-minutes { flex: 0 0 64px; text-align: right; color: var(--tertiary); font-size: 11px; font-variant-numeric: tabular-nums; }
+.carryover-actions { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin-top: 12px; }
 .review-card { border-style: dashed; }
 .review-card h2 { margin-bottom: 6px; }
 .review-list { margin: 12px 0 16px; padding-left: 18px; color: var(--secondary); font-size: 13px; line-height: 2; }
@@ -297,3 +300,5 @@ footer { display: flex; justify-content: space-between; margin-top: 18px; color:
   footer { align-items: flex-start; gap: 12px; }
 }
 
+
+/* touch */
