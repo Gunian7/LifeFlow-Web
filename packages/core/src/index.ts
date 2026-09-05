@@ -3,6 +3,8 @@ export type { ThemeId, ThemeDefinition, ThemeTokens } from './theme'
 export { selectCarryoverTasks } from './carryover'
 export type { CarryoverItem } from './carryover'
 export { completedThisWeek, weekKey } from './weekly'
+export { buildBriefingFacts } from './briefing'
+export type { BriefingFacts, BriefingInput } from './briefing'
 
 export type Importance = 'must' | 'important' | 'want'
 export type TaskStatus = 'inbox' | 'planned' | 'inProgress' | 'completed' | 'skipped' | 'deferred' | 'cancelled'

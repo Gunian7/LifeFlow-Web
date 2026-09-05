@@ -118,6 +118,13 @@ html.custom-bg-on body[data-theme='archive-terminal'] { background-image: none; 
 .special-row.block { color: var(--info); }
 .rail-dot.is-block { border-color: var(--info); background: color-mix(in srgb, var(--info) 25%, var(--bg)); }
 .block-times { display: flex; gap: 8px; align-items: center; }
+.briefing-card { border-style: dashed; }
+.briefing-lines { display: flex; flex-direction: column; gap: 4px; }
+.briefing-line { margin: 0; color: var(--secondary); font-size: 13px; line-height: 1.7; }
+.briefing-text { color: var(--secondary); font-size: 13px; line-height: 1.8; }
+.ai-parse-toggle { margin: 6px 0 0; }
+.ai-parse-toggle.parsing { color: var(--tertiary); }
+.ai-note { margin: 6px 0 0; color: var(--tertiary); font-size: 12px; }
 .update-toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 60; display: flex; align-items: center; gap: 14px; padding: 12px 18px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); box-shadow: var(--shadow); color: var(--secondary); font-size: 13px; }
 button, input, textarea { font: inherit; }
 button { cursor: pointer; }

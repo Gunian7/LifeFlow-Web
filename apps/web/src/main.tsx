@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { ExistingPlanBlock, Importance, PlannerFixedBlock, PlannerTask, StoredTask, TaskDraft, RecurrenceRule, RecurringTemplate, ThemeId } from '../../../packages/core/src'
-import { buildExport, buildTimelineEntries, completedThisWeek, createTask, createTemplate, defaultTheme, deleteTask, editTask, getTheme, materializeOccurrences, mergeImportedTasks, parseImport, pinTask, replanToday, selectCarryoverTasks, weekKey, completeTask, uncompleteTask, unpinTask, themeIds } from '../../../packages/core/src'
+import { buildBriefingFacts, buildExport, buildTimelineEntries, completedThisWeek, createTask, createTemplate, defaultTheme, deleteTask, editTask, getTheme, materializeOccurrences, mergeImportedTasks, parseImport, pinTask, replanToday, selectCarryoverTasks, weekKey, completeTask, uncompleteTask, unpinTask, themeIds } from '../../../packages/core/src'
 import type { FocusSession } from '../../../packages/core/src/focus'
 import { focusRemainingSeconds, pauseFocus, resumeFocus, startFocus } from '../../../packages/core/src/focus'
 import { CropEditor } from './CropEditor'
 import { AiCard } from './components/AiCard'
 import { BlocksCard } from './components/BlocksCard'
+import { BriefingCard } from './components/BriefingCard'
 import { CaptureCard } from './components/CaptureCard'
 import { EditCard } from './components/EditCard'
 import { FocusView } from './components/FocusView'
@@ -34,6 +35,7 @@ const PLANNER_KEY = 'lifeflow-web-planner-v1'
 const CARRYOVER_KEY = 'lifeflow-web-carryover-v1'
 const REVIEW_KEY = 'lifeflow-web-review-v1'
 const BLOCKS_KEY = 'lifeflow-web-blocks-v1'
+const BRIEFING_KEY = 'lifeflow-web-briefing-v1'
 
 const initialNow = new Date().toISOString()
 const initialTasks: LocalTask[] = [
@@ -252,6 +254,7 @@ function App() {
   const [reviewShown, setReviewShown] = useState(() => localStorage.getItem(REVIEW_KEY))
   const [blocks, setBlocks] = useState<PlannerFixedBlock[]>(loadBlocks)
   const [blocksOpen, setBlocksOpen] = useState(false)
+  const [briefingShownDate, setBriefingShownDate] = useState(() => localStorage.getItem(BRIEFING_KEY))
 
   useEffect(() => {
     localStorage.setItem(BLOCKS_KEY, JSON.stringify(blocks))
@@ -264,7 +267,7 @@ function App() {
     if (created.task) setTasks((current) => [...current, created.task!])
   }
 
-  function handleDetailedAdd(task: StoredTask, repeat: RecurrenceRule | null) {
+  function handleDetailedAdd(task: StoredTask, repeat: RecurrenceRule | null, deferUntil?: string) {
     let finalTask = task
     if (repeat) {
       const template = createTemplate(crypto.randomUUID(), task.title, repeat, new Date().toISOString())
@@ -275,6 +278,7 @@ function App() {
       setTemplates((current) => [...current, template])
       finalTask = { ...task, templateId: template.id, occurrenceDate: repeat.startDate }
     }
+    if (deferUntil) finalTask = { ...finalTask, deferredUntil: deferUntil }
     setTasks((current) => [...current, finalTask])
   }
 
@@ -378,8 +382,15 @@ function App() {
   const updateReady = useAppUpdate()
   const tomorrowStr = localDate(new Date(Date.parse(now) + 86400000).toISOString())
   const tomorrowTasks = tasks.filter((task) => !task.done && task.deferredUntil !== undefined && task.deferredUntil > todayStr)
-  const timelineRows = [...timelineEntries, ...blocks.filter((block) => localDate(block.startAt) === todayStr).map((block) => ({ kind: 'block' as const, title: block.title, startAt: block.startAt, endAt: block.endAt }))].sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt))
   const carryoverItems = carryoverReviewed === todayStr ? [] : selectCarryoverTasks(tasks, todayStr)
+  const briefingFacts = buildBriefingFacts({ tasks, planBlocks: plan.planBlocks, unscheduledCount: plan.unscheduledTasks.length, deferredCount: tomorrowTasks.length, carriedCount: carryoverItems.length, settings: plannerInput.settings, now })
+  const briefingDue = briefingShownDate !== todayStr && (briefingFacts.taskCount > 0 || plan.unscheduledTasks.length > 0)
+
+  function dismissBriefing() {
+    localStorage.setItem(BRIEFING_KEY, todayStr)
+    setBriefingShownDate(todayStr)
+  }
+  const timelineRows = [...timelineEntries, ...blocks.filter((block) => localDate(block.startAt) === todayStr).map((block) => ({ kind: 'block' as const, title: block.title, startAt: block.startAt, endAt: block.endAt }))].sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt))
   const weekReview = completedThisWeek(tasks, now)
   const reviewDue = reviewShown !== weekKey(now) && weekReview.length > 0
 
@@ -638,6 +649,8 @@ function App() {
       <main className="shell">
       <Header tagline={tagline} today={today} themeId={themeId} onThemeChange={setThemeId} showAll={showAll} onToggleShowAll={() => setShowAll((value) => !value)} onOpenSettings={() => setSettingsOpen(true)} />
 
+      {briefingDue && <BriefingCard facts={briefingFacts} apiBaseUrl={apiBaseUrl} onDismiss={dismissBriefing} />}
+
       <div className="workspace">
         <aside className="sidebar" aria-label="导航与状态">
           <div className="side-block"><p className="side-title">现在</p><div className="side-line"><span>未完成</span><span>{tasks.filter((task) => !task.done).length}</span></div><div className="side-line"><span>已安排</span><span>{plan.planBlocks.length}</span></div></div>
@@ -650,7 +663,7 @@ function App() {
 
       <Timeline rows={timelineRows} tasks={tasks} now={now} selectedTaskId={selectedTaskId} planCount={plan.planBlocks.length} changeCount={changeCount} showAll={showAll} unscheduled={plan.unscheduledTasks} tomorrowTasks={tomorrowTasks} tomorrowStr={tomorrowStr} onToggleSelect={(id) => { setSelectedTaskId(id); toggleTask(id) }} onEdit={openEditor} onTaskFlag={setTaskFlag} onOpenSettings={() => { setSettingsSection('planning'); setSettingsOpen(true) }} />
 
-      <CaptureCard blocksOpen={blocksOpen} onQuickAdd={handleQuickAdd} onDetailedAdd={handleDetailedAdd} onOpenBlocks={() => setBlocksOpen(true)} />
+      <CaptureCard apiBaseUrl={apiBaseUrl} blocksOpen={blocksOpen} onQuickAdd={handleQuickAdd} onDetailedAdd={handleDetailedAdd} onOpenBlocks={() => setBlocksOpen(true)} />
       {blocksOpen && <BlocksCard todayBlocks={blocks.filter((block) => localDate(block.startAt) === todayStr)} today={todayStr} onAdd={(block) => setBlocks((current) => [...current, block])} onDelete={(id) => setBlocks((current) => current.filter((item) => item.id !== id))} onClose={() => setBlocksOpen(false)} />}
 
       {editingTask && <EditCard key={editingTask.id} task={editingTask} templates={templates} onClose={() => setEditingTask(null)} onSaveTask={(updated) => { setTasks((current) => current.map((item) => item.id === updated.id ? updated : item)); setEditingTask(null) }} onDeleteTask={() => removeTask(editingTask.id)} onTaskFlag={setTaskFlag} onPauseRepeat={stopRepeatById} onResumeRepeat={resumeRepeatById} onDeleteRepeat={deleteRepeatById} onSetRepeat={(rule) => setRepeatForTask(editingTask, rule)} />}

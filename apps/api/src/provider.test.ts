@@ -30,6 +30,6 @@ describe('OpenAI-compatible provider adapter', () => {
   it('throws a generic provider error without including response body', async () => {
     const fetcher = vi.fn(async () => new Response('private upstream details', { status: 500 }))
     const provider = createOpenAiCompatibleProvider({ apiKey: 'secret', baseUrl: 'https://example.test/v1', model: 'model', fetcher })
-    await expect(provider(tasks)).rejects.toThrow('PROVIDER_REQUEST_FAILED')
+    await expect(provider(tasks, {})).rejects.toThrow('PROVIDER_REQUEST_FAILED')
   })
 })

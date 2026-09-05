@@ -5,13 +5,14 @@ import { localDate } from '../format'
 import { speechSupported, useSpeechRecognition } from '../speech'
 
 interface CaptureCardProps {
+  apiBaseUrl: string
   blocksOpen: boolean
   onQuickAdd: (title: string, minutes: number | undefined) => void
-  onDetailedAdd: (task: StoredTask, repeat: RecurrenceRule | null) => void
+  onDetailedAdd: (task: StoredTask, repeat: RecurrenceRule | null, deferUntil?: string) => void
   onOpenBlocks: () => void
 }
 
-export function CaptureCard({ blocksOpen, onQuickAdd, onDetailedAdd, onOpenBlocks }: CaptureCardProps) {
+export function CaptureCard({ apiBaseUrl, blocksOpen, onQuickAdd, onDetailedAdd, onOpenBlocks }: CaptureCardProps) {
   const [voiceSupported] = useState(speechSupported)
   const [title, setTitle] = useState('')
   const [minutes, setMinutes] = useState('30')
@@ -25,6 +26,9 @@ export function CaptureCard({ blocksOpen, onQuickAdd, onDetailedAdd, onOpenBlock
   const [repeat, setRepeat] = useState<RecurrenceRule | null>(null)
   const [repeatDays, setRepeatDays] = useState<number[]>([])
   const [error, setError] = useState('')
+  const [aiParsing, setAiParsing] = useState(false)
+  const [aiNote, setAiNote] = useState('')
+  const [deferDate, setDeferDate] = useState<string | null>(null)
 
   const voiceBaseRef = useRef('')
   const handleVoiceText = useCallback((chunk: string, finalText: string) => {
@@ -43,11 +47,34 @@ export function CaptureCard({ blocksOpen, onQuickAdd, onDetailedAdd, onOpenBlock
     setTitle(''); setMinutes('30')
   }
 
+  async function aiParse() {
+    const text = title.trim()
+    if (!text) return
+    setAiParsing(true); setAiNote('')
+    try {
+      const response = await fetch(`${apiBaseUrl}/v1/ai/parse`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, now: new Date().toISOString(), timezone: 'Asia/Shanghai' }) })
+      const result = await response.json() as { ok?: boolean; drafts?: Array<{ title: string; date?: string; pinTime?: string; minutes?: number; place?: string; notes?: string }>; reply?: string }
+      if (!response.ok || !result.ok || !result.drafts || result.drafts.length === 0) throw new Error('UNAVAILABLE')
+      const draft = result.drafts[0]
+      setCreateOpen(true)
+      setPlace(draft.place ?? ''); setNotes(draft.notes ?? '')
+      setPinTime(draft.pinTime ?? '')
+      if (draft.minutes !== undefined) setMinutes(String(draft.minutes))
+      const today = new Date().toISOString().slice(0, 10)
+      if (draft.date && draft.date !== today) { setDeferDate(draft.date); setAiNote(`AI 解析为 ${draft.date} 的任务，确认后会放到那天。`) }
+      else setAiNote(`${result.reply}（请确认后添加。）`)
+    } catch {
+      setAiNote('AI 解析暂时不可用，你可以手动填写。')
+    } finally {
+      setAiParsing(false)
+    }
+  }
+
   function resetDetail() {
     setCreateOpen(false)
     setImportance('important'); setSplittable(false); setDeadline('')
     setPlace(''); setNotes(''); setPinTime(''); setError('')
-    setRepeat(null); setRepeatDays([])
+    setRepeat(null); setRepeatDays([]); setDeferDate(null); setAiNote('')
   }
 
   function detailedAdd() {
@@ -72,8 +99,8 @@ export function CaptureCard({ blocksOpen, onQuickAdd, onDetailedAdd, onOpenBlock
       if (!pinned.task) { setError('这个时间已经过去了，或者时长还没填。'); return }
       task = pinned.task
     }
-    onDetailedAdd(task, repeat ? { kind: repeat.kind, weekdays: repeat.kind === 'weekly' ? repeatDays : undefined, startDate: localDate(new Date().toISOString()) } : null)
-    setTitle(''); setMinutes('30')
+    onDetailedAdd(task, repeat ? { kind: repeat.kind, weekdays: repeat.kind === 'weekly' ? repeatDays : undefined, startDate: localDate(new Date().toISOString()) } : null, deferDate ?? undefined)
+    setTitle(''); setMinutes('30'); setDeferDate(null)
     resetDetail()
   }
 
@@ -87,6 +114,8 @@ export function CaptureCard({ blocksOpen, onQuickAdd, onDetailedAdd, onOpenBlock
         <button className="add-button" type="button" onClick={() => (createOpen ? detailedAdd() : quickAdd())}>加</button>
       </section>
       {voiceError && <p className="voice-error">{voiceError === 'not-allowed' ? '需要麦克风权限才能听写。' : voiceError === 'network' ? '语音服务暂时不可用，检查网络后重试。' : '没听清，再试一次。'}</p>}
+      {!createOpen && title.trim() && voiceSupported !== undefined && <button className={`link-button expand-toggle ai-parse-toggle ${aiParsing ? 'parsing' : ''}`} type="button" onClick={aiParse} disabled={aiParsing}>{aiParsing ? 'AI 正在解析……' : '✦ 让 AI 解析这句话'}</button>}
+      {aiNote && <p className="settings-copy ai-note">{aiNote}{deferDate ? `（日期 ${deferDate}）` : ''}</p>}
       {!createOpen && !blocksOpen && <button className="link-button expand-toggle" type="button" onClick={() => setCreateOpen(true)}>展开详细设置，顺便定好重要性和时间 ▾</button>}
       {!createOpen && !blocksOpen && <button className="link-button expand-toggle" type="button" onClick={onOpenBlocks}>加一段固定日程（会议、课程这类挪不动的时间） ▾</button>}
       {createOpen && <section className="edit-card create-card" aria-label="新任务详细设置">
