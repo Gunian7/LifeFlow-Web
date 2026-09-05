@@ -3,6 +3,7 @@ import type { Importance, RecurrenceRule, StoredTask, TaskDraft } from '../../..
 import { createTask, pinTask } from '../../../../packages/core/src'
 import { localDate } from '../format'
 import { speechSupported, useSpeechRecognition } from '../speech'
+import { aiPost, AiQuotaError } from '../ai-client'
 
 interface CaptureCardProps {
   apiBaseUrl: string
@@ -52,19 +53,17 @@ export function CaptureCard({ apiBaseUrl, blocksOpen, onQuickAdd, onDetailedAdd,
     if (!text) return
     setAiParsing(true); setAiNote('')
     try {
-      const response = await fetch(`${apiBaseUrl}/v1/ai/parse`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, now: new Date().toISOString(), timezone: 'Asia/Shanghai' }) })
-      const result = await response.json() as { ok?: boolean; drafts?: Array<{ title: string; date?: string; pinTime?: string; minutes?: number; place?: string; notes?: string }>; reply?: string }
-      if (!response.ok || !result.ok || !result.drafts || result.drafts.length === 0) throw new Error('UNAVAILABLE')
+      const result = await aiPost<{ ok: boolean; drafts: Array<{ title: string; date?: string; pinTime?: string; minutes?: number; place?: string; notes?: string }>; reply?: string }>(apiBaseUrl, '/v1/ai/parse', { text, now: new Date().toISOString(), timezone: 'Asia/Shanghai' })
       const draft = result.drafts[0]
       setCreateOpen(true)
       setPlace(draft.place ?? ''); setNotes(draft.notes ?? '')
       setPinTime(draft.pinTime ?? '')
       if (draft.minutes !== undefined) setMinutes(String(draft.minutes))
-      const today = new Date().toISOString().slice(0, 10)
+      const today = localDate(new Date().toISOString())
       if (draft.date && draft.date !== today) { setDeferDate(draft.date); setAiNote(`AI 解析为 ${draft.date} 的任务，确认后会放到那天。`) }
-      else setAiNote(`${result.reply}（请确认后添加。）`)
-    } catch {
-      setAiNote('AI 解析暂时不可用，你可以手动填写。')
+      else setAiNote(`${result.reply ?? '解析完成。'}（请确认后添加。）`)
+    } catch (error) {
+      setAiNote(error instanceof AiQuotaError ? '今日 AI 次数已用完（明天重置），你可以手动填写。' : 'AI 解析暂时不可用，你可以手动填写。')
     } finally {
       setAiParsing(false)
     }

@@ -5,7 +5,7 @@ import type { ParseChat } from '../src/parse'
 const body = { text: '明天下午三点去牙医，大概一小时', now: '2026-08-30T16:00:00.000Z', timezone: 'Asia/Shanghai' }
 
 async function request(text: unknown, parseProvider?: ParseChat): Promise<Response> {
-  return app.request('http://localhost/v1/ai/parse', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(text) }, parseProvider ? { PARSE_PROVIDER: parseProvider } : undefined)
+  return app.request('http://localhost/v1/ai/parse', { method: 'POST', headers: { 'content-type': 'application/json', 'x-lifeflow-device': 'a3b1c2d4-0000-4000-8000-000000000001' }, body: JSON.stringify(text) }, parseProvider ? { PARSE_PROVIDER: parseProvider } : undefined)
 }
 
 describe('LifeFlow AI parse endpoint', () => {

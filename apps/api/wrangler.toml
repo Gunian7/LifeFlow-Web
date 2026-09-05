@@ -8,3 +8,15 @@ workers_dev = true
 # npx wrangler secret put LLM_API_KEY
 LLM_MODEL = "gpt-5.4"
 LLM_BASE_URL = "https://api.openai.com/v1"
+# Free daily AI allowance per device. Raise it for paid tiers later.
+FREE_DAILY_LIMIT = "20"
+
+# Phase-1 quota counters live in D1. Create the database once, then paste the
+# id below — until a binding named DB exists, the quota gate fails open and
+# the endpoints behave as before:
+#   npx wrangler d1 create lifeflow-usage
+#   npx wrangler d1 execute lifeflow-usage --remote --file apps/api/schema.sql
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "lifeflow-usage"
+# database_id = "<paste-after-create>"

@@ -10,7 +10,7 @@ const validBody = {
 }
 
 async function request(body: unknown, provider?: OrderProvider): Promise<Response> {
-  return app.request('http://localhost/v1/ai/order', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }, provider ? { ORDER_PROVIDER: provider } : undefined)
+  return app.request('http://localhost/v1/ai/order', { method: 'POST', headers: { 'content-type': 'application/json', 'x-lifeflow-device': 'a3b1c2d4-0000-4000-8000-000000000001' }, body: JSON.stringify(body) }, provider ? { ORDER_PROVIDER: provider } : undefined)
 }
 
 describe('LifeFlow AI order endpoint', () => {

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { BriefingFacts } from '../../../../packages/core/src'
+import { aiPost, AiQuotaError } from '../ai-client'
 
 interface BriefingCardProps {
   facts: BriefingFacts
@@ -27,12 +28,11 @@ export function BriefingCard({ facts, apiBaseUrl, onDismiss }: BriefingCardProps
   async function askAi() {
     setAiState('loading')
     try {
-      const response = await fetch(`${apiBaseUrl}/v1/ai/briefing`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ facts }) })
-      const result = await response.json() as { ok?: boolean; text?: string }
-      if (!response.ok || !result.ok || !result.text) throw new Error('UNAVAILABLE')
+      const result = await aiPost<{ ok: boolean; text: string }>(apiBaseUrl, '/v1/ai/briefing', { facts })
       setAiText(result.text); setAiState('done')
-    } catch {
+    } catch (error) {
       setAiState('error')
+      setAiText(error instanceof AiQuotaError ? '今日 AI 次数已用完，本地这份简报就是最好的。' : '')
     }
   }
 
@@ -45,7 +45,7 @@ export function BriefingCard({ facts, apiBaseUrl, onDismiss }: BriefingCardProps
         <div className="briefing-lines">{localLines(facts).map((line) => <p className="briefing-line" key={line}>{line}</p>)}</div>
       )}
       {aiState === 'loading' && <p className="settings-copy">正在写一份更有温度的……</p>}
-      {aiState === 'error' && <p className="voice-error">AI 简报暂时不可用，上面的就够了。</p>}
+      {aiState === 'error' && aiText && <p className="voice-error">{aiText}</p>}
       <div className="settings-actions">
         {aiState === 'idle' && <button className="link-button" type="button" onClick={askAi}>让 AI 换个说法</button>}
         <button className="secondary-button" type="button" onClick={onDismiss}>开始今天</button>

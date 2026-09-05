@@ -5,7 +5,7 @@ import type { BriefingChat } from '../src/briefing'
 const facts = { date: '2026-08-31', taskCount: 3, mustCount: 1, firstTask: { title: '写周报', startLocal: '09:00' }, unscheduledCount: 1, deferredCount: 0, carriedCount: 0, bufferMinutes: 45, windowStart: '08:00', windowEnd: '23:30' }
 
 async function request(body: unknown, provider?: BriefingChat): Promise<Response> {
-  return app.request('http://localhost/v1/ai/briefing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }, provider ? { BRIEFING_PROVIDER: provider } : undefined)
+  return app.request('http://localhost/v1/ai/briefing', { method: 'POST', headers: { 'content-type': 'application/json', 'x-lifeflow-device': 'a3b1c2d4-0000-4000-8000-000000000001' }, body: JSON.stringify(body) }, provider ? { BRIEFING_PROVIDER: provider } : undefined)
 }
 
 describe('LifeFlow AI briefing endpoint', () => {
