@@ -1,6 +1,7 @@
 import type { Context } from 'hono'
 import type { D1Like } from './quota'
 import { hashPassword, newSalt, newSessionToken, newUserId, readCredentials, sessionExpiry, sessionValid, tokenHash, verifyPassword } from './auth'
+import { claimCode, codeDigest } from './redeem'
 
 export interface UserRow { id: string; email: string; password_hash: string; created_at: string; plan: string; plan_expires_at: string | null }
 export interface SessionRow { token_hash: string; user_id: string; expires_at: string }
@@ -55,6 +56,38 @@ export async function setUserPlan(db: AuthD1, email: string, plan: Plan, days: n
   const expiresAt = plan === 'free' ? null : new Date(Date.parse(now) + days * 86400000).toISOString()
   await db.prepare('UPDATE users SET plan = ?1, plan_expires_at = ?2 WHERE id = ?3').bind(plan, expiresAt, user.id).run()
   return { ...user, plan, plan_expires_at: expiresAt }
+}
+
+// 兑换码核销：把码绑到当前登录账号上，同时更新账号套餐。
+export async function redeemForUser(db: AuthD1, code: string, userId: string, now: string): Promise<{ plan: Plan; days: number } | null> {
+  const hash = await codeHashOf(code)
+  const claimed = await db.prepare('UPDATE redeem_codes SET used_by = ?1, used_at = ?2 WHERE code_hash = ?3 AND used_by IS NULL RETURNING plan, days').bind(userId, now, hash).first<{ plan: Plan; days: number }>()
+  if (!claimed) return null
+  const expiresAt = new Date(Date.parse(now) + claimed.days * 86400000).toISOString()
+  await db.prepare('UPDATE users SET plan = ?1, plan_expires_at = ?2 WHERE id = ?3').bind(claimed.plan, expiresAt, userId).run()
+  return claimed
+}
+
+async function codeHashOf(code: string): Promise<string> {
+  const normalized = code.trim().toUpperCase().replace(/[\s-]/g, '')
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalized))
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+export async function handleRedeem(context: Context<{ Bindings: { DB?: AuthD1 } }>): Promise<Response> {
+  const db = context.env?.DB
+  if (!db) return context.json({ ok: false, error: 'ACCOUNTS_UNAVAILABLE' }, 503)
+  const token = bearerToken(context.req.header('Authorization'))
+  if (!token) return context.json({ ok: false, error: 'UNAUTHORIZED' }, 401)
+  const user = await userForToken(db, token, new Date().toISOString())
+  if (!user) return context.json({ ok: false, error: 'UNAUTHORIZED' }, 401)
+  let body: unknown
+  try { body = await context.req.json() } catch { return context.json({ ok: false, error: 'INVALID_REQUEST' }, 400) }
+  const code = typeof (body as { code?: unknown }).code === 'string' ? (body as { code: string }).code.trim() : null
+  if (!code || code.length < 8 || code.length > 40) return context.json({ ok: false, error: 'INVALID_REQUEST' }, 400)
+  const claimed = await redeemForUser(db, code, user.id, new Date().toISOString())
+  if (!claimed) return context.json({ ok: false, error: 'CODE_INVALID_OR_USED' }, 404)
+  return context.json({ ok: true, plan: claimed.plan, days: claimed.days })
 }
 
 export async function deleteSession(db: AuthD1, token: string): Promise<void> {

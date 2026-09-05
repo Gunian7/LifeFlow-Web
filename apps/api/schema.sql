@@ -28,3 +28,13 @@ CREATE TABLE IF NOT EXISTS sessions (
   user_id TEXT NOT NULL,
   expires_at TEXT NOT NULL
 );
+
+-- Redeem codes: sold externally (爱发电/面包多), user enters the raw code,
+-- server matches the SHA-256 hash and binds the plan. One code = one use.
+CREATE TABLE IF NOT EXISTS redeem_codes (
+  code_hash TEXT PRIMARY KEY,
+  plan TEXT NOT NULL,
+  days INTEGER NOT NULL,
+  used_by TEXT,
+  used_at TEXT
+);

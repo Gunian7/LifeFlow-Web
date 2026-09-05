@@ -7,11 +7,15 @@ import { handleBriefing, type BriefingChat } from './briefing'
 import { createChat } from './chat'
 import { createOpenAiCompatibleProvider } from './provider'
 import { dayKey, deviceIdFrom, readQuota, recordUsage } from './quota'
-import { handleLogin, handleLogout, handleMe, handleRegister, bearerToken, findUserByEmail, setUserPlan, userForToken } from './auth-routes'
+import { handleLogin, handleLogout, handleMe, handleRegister, bearerToken, findUserByEmail, setUserPlan, userForToken, handleRedeem } from './auth-routes'
 import type { AuthD1, Plan, UserRow } from './auth-routes'
+import { handleGenerateCodes } from './redeem'
+import { buildBreakdownPrompt, parseSubtasks } from './breakdown'
+
 type Bindings = {
   PARSE_PROVIDER?: Parameters<typeof handleParse>[1]
   BRIEFING_PROVIDER?: Parameters<typeof handleBriefing>[1]
+  BREAKDOWN_PROVIDER?: (prompt: string) => Promise<string>
   LLM_API_KEY?: string
   LLM_BASE_URL?: string
   LLM_MODEL?: string
@@ -170,6 +174,25 @@ app.post('/v1/ai/briefing', async (context) => {
   if (!gate.ok) return gate.response
   const chat = context.env?.BRIEFING_PROVIDER ?? envChat(context.env)
   return finish(context, gate, await handleBriefing(context, chat))
+})
+
+app.post('/v1/auth/redeem', async (context) => handleRedeem(context))
+app.post('/v1/admin/generate-codes', async (context) => handleGenerateCodes(context))
+
+app.post('/v1/ai/breakdown', async (context) => {
+  const gate = await quotaGate(context)
+  if (!gate.ok) return gate.response
+  const raw = await context.req.json().catch(() => null) as { title?: unknown; minutes?: unknown } | null
+  const title = typeof raw?.title === 'string' ? raw.title.trim().slice(0, 200) : null
+  const minutes = typeof raw?.minutes === 'number' && Number.isInteger(raw.minutes) && raw.minutes > 0 ? raw.minutes : null
+  if (!title || !minutes) return context.json({ ok: false, error: 'INVALID_REQUEST' }, 400)
+  const chat = context.env?.BREAKDOWN_PROVIDER ?? envChat(context.env)
+  if (!chat) return context.json({ ok: false, error: 'PROVIDER_UNAVAILABLE' }, 502)
+  let response_text: string
+  try { response_text = await chat(buildBreakdownPrompt(title, minutes)) } catch { return context.json({ ok: false, error: 'PROVIDER_UNAVAILABLE' }, 502) }
+  const subtasks = parseSubtasks(response_text)
+  if (!subtasks) return context.json({ ok: false, error: 'INVALID_PROVIDER_RESPONSE' }, 502)
+  return context.json({ ok: true, subtasks })
 })
 
 function envChat(env?: Bindings) {
