@@ -19,6 +19,8 @@ import { Timeline } from './components/Timeline'
 import { SettingsPage } from './components/SettingsPage'
 import type { SettingsSection } from './components/SettingsPage'
 import { localDate, reasonText, toLocalInput } from './format'
+import { deviceID } from './device'
+import { savedEmail } from './account'
 import { speechSupported, useSpeechRecognition } from './speech'
 import './styles.css'
 
@@ -268,6 +270,7 @@ function App() {
   const [briefingShownDate, setBriefingShownDate] = useState(() => localStorage.getItem(BRIEFING_KEY))
   const [undo, setUndo] = useState<{ message: string; undo: () => void } | null>(null)
   const undoTimer = useRef<number | undefined>(undefined)
+  const [accountEmail, setAccountEmail] = useState(() => savedEmail())
 
   function showUndo(message: string, restore: () => void) {
     setUndo({ message, undo: restore })
@@ -686,6 +689,9 @@ function App() {
         onExport={exportData}
         onImport={importData}
         onDeleteAll={deleteAllData}
+        accountEmail={accountEmail}
+        apiBaseUrl={apiBaseUrl}
+        onAccountChanged={() => setAccountEmail(savedEmail())}
       />
     </>
   )

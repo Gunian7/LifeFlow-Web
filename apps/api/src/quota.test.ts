@@ -97,3 +97,84 @@ describe('quota gate on AI routes', () => {
     expect(response.headers.get('X-Quota-Mode')).toBe('unconfigured')
   })
 })
+
+const EMAIL = 'account@example.com'
+const PASSWORD = 'long-enough-password'
+
+// The auth flow runs SELECTs against the same fake, so this one understands
+// the account tables too (the rows-based quota fake would answer every
+// SELECT with a count row and break registration).
+function authFakeD1(): AuthD1 & { ai_usage: Map<string, number> } {
+  const users = new Map<string, { id: string; email: string; passwordHash: string }>()
+  const emailIndex = new Map<string, string>()
+  const sessions = new Map<string, { userId: string; expiresAt: string }>()
+  const ai_usage = new Map<string, number>()
+  return {
+    ai_usage,
+    prepare(query: string) {
+      return {
+        bind(...values: unknown[]) {
+          return {
+            async first<T>(): Promise<T | null> {
+              if (query.includes('FROM users WHERE email')) {
+                const id = emailIndex.get(values[0] as string)
+                const user = id ? users.get(id) : undefined
+                return user ? { id: user.id, email: user.email, password_hash: user.passwordHash, created_at: '' } as T : null
+              }
+              if (query.includes('FROM users WHERE id')) {
+                const user = users.get(values[0] as string)
+                return user ? { id: user.id, email: user.email, password_hash: user.passwordHash, created_at: '' } as T : null
+              }
+              if (query.includes('FROM sessions WHERE token_hash')) {
+                const session = sessions.get(values[0] as string)
+                return session ? { token_hash: values[0] as string, user_id: session.userId, expires_at: session.expiresAt } as T : null
+              }
+              if (query.includes('FROM ai_usage')) {
+                const count = ai_usage.get(`${values[0]}|${values[1]}`) ?? 0
+                return { count } as T
+              }
+              return null
+            },
+            async all<T>(): Promise<{ results?: T[] }> {
+              return { results: [] }
+            },
+            async run(): Promise<unknown> {
+              if (query.includes('INSERT INTO users')) {
+                const [id, email, passwordHash, createdAt] = values as [string, string, string, string]
+                users.set(id, { id, email, passwordHash })
+                emailIndex.set(email, id)
+              }
+              if (query.includes('INSERT INTO sessions')) {
+                const [tokenHashValue, userId, expiresAt] = values as [string, string, string]
+                sessions.set(tokenHashValue, { userId, expiresAt })
+              }
+              if (query.includes('DELETE FROM sessions')) sessions.delete(values[0] as string)
+              if (query.includes('ON CONFLICT (device_id, day)')) {
+                const key = `${values[0]}|${values[1]}`
+                ai_usage.set(key, (ai_usage.get(key) ?? 0) + 1)
+              }
+              return null
+            },
+          }
+        },
+      }
+    },
+  }
+}
+
+describe('quota for logged-in accounts', () => {
+  it('counts a logged-in user by account instead of device', async () => {
+    const db = authFakeD1()
+    const env = { DB: db as unknown as D1Like, FREE_DAILY_LIMIT: '20' }
+    await app.request('http://localhost/v1/auth/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: EMAIL, password: PASSWORD }) }, env)
+    const login = await app.request('http://localhost/v1/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: EMAIL, password: PASSWORD }) }, env)
+    const { token } = await login.json() as { token: string }
+    const headers = { 'content-type': 'application/json', 'x-lifeflow-device': DEVICE, authorization: `Bearer ${token}` }
+    const parseEnv = { ...env, PARSE_PROVIDER: async () => JSON.stringify({ drafts: [{ title: '解析出的任务' }], reply: '好的' }) }
+    const first = await app.request('http://localhost/v1/ai/parse', { method: 'POST', headers, body: JSON.stringify({ text: '买牛奶', now: '2026-08-31T10:00:00.000Z' }) }, parseEnv)
+    expect(first.status).toBe(200)
+    // 用量记在账号名下，而不是设备名下
+    expect([...db.ai_usage.keys()].some((key) => key.startsWith('user:'))).toBe(true)
+    expect([...db.ai_usage.keys()].some((key) => key === DEVICE)).toBe(false)
+  })
+})
