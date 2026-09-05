@@ -2,8 +2,14 @@ import type { Context } from 'hono'
 import type { D1Like } from './quota'
 import { hashPassword, newSalt, newSessionToken, newUserId, readCredentials, sessionExpiry, sessionValid, tokenHash, verifyPassword } from './auth'
 
-export interface UserRow { id: string; email: string; password_hash: string; created_at: string }
+export interface UserRow { id: string; email: string; password_hash: string; created_at: string; plan: string; plan_expires_at: string | null }
 export interface SessionRow { token_hash: string; user_id: string; expires_at: string }
+
+export type Plan = 'free' | 'monthly' | 'yearly'
+
+export function isPlan(value: unknown): value is Plan {
+  return value === 'free' || value === 'monthly' || value === 'yearly'
+}
 
 export interface AuthD1 {
   prepare(query: string): {
@@ -16,12 +22,12 @@ export interface AuthD1 {
 }
 
 export async function findUserByEmail(db: AuthD1, email: string): Promise<UserRow | null> {
-  return await db.prepare('SELECT id, email, password_hash, created_at FROM users WHERE email = ?1').bind(email).first<UserRow>()
+  return await db.prepare('SELECT id, email, password_hash, created_at, plan, plan_expires_at FROM users WHERE email = ?1').bind(email).first<UserRow>()
 }
 
 export async function createUser(db: AuthD1, email: string, password: string, now: string): Promise<UserRow> {
-  const user: UserRow = { id: newUserId(), email, password_hash: await hashPassword(password, newSalt()), created_at: now }
-  await db.prepare('INSERT INTO users (id, email, password_hash, created_at) VALUES (?1, ?2, ?3, ?4)').bind(user.id, user.email, user.password_hash, user.created_at).run()
+  const user: UserRow = { id: newUserId(), email, password_hash: await hashPassword(password, newSalt()), created_at: now, plan: 'free', plan_expires_at: null }
+  await db.prepare('INSERT INTO users (id, email, password_hash, created_at, plan, plan_expires_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)').bind(user.id, user.email, user.password_hash, user.created_at, user.plan, user.plan_expires_at).run()
   return user
 }
 
@@ -34,7 +40,21 @@ export async function createSession(db: AuthD1, userId: string, now: string): Pr
 export async function userForToken(db: AuthD1, token: string, now: string): Promise<UserRow | null> {
   const session = await db.prepare('SELECT token_hash, user_id, expires_at FROM sessions WHERE token_hash = ?1').bind(await tokenHash(token)).first<SessionRow>()
   if (!session || !sessionValid(session.expires_at, now)) return null
-  return await db.prepare('SELECT id, email, password_hash, created_at FROM users WHERE id = ?1').bind(session.user_id).first<UserRow>()
+  return await db.prepare('SELECT id, email, password_hash, created_at, plan, plan_expires_at FROM users WHERE id = ?1').bind(session.user_id).first<UserRow>()
+}
+
+export async function findUserById(db: AuthD1, id: string): Promise<UserRow | null> {
+  return await db.prepare('SELECT id, email, password_hash, created_at, plan, plan_expires_at FROM users WHERE id = ?1').bind(id).first<UserRow>()
+}
+
+// Manual plan granting (payment integration arrives in a later phase; until
+// then an admin key grants plans by email).
+export async function setUserPlan(db: AuthD1, email: string, plan: Plan, days: number, now: string): Promise<UserRow | null> {
+  const user = await findUserByEmail(db, email)
+  if (!user) return null
+  const expiresAt = plan === 'free' ? null : new Date(Date.parse(now) + days * 86400000).toISOString()
+  await db.prepare('UPDATE users SET plan = ?1, plan_expires_at = ?2 WHERE id = ?3').bind(plan, expiresAt, user.id).run()
+  return { ...user, plan, plan_expires_at: expiresAt }
 }
 
 export async function deleteSession(db: AuthD1, token: string): Promise<void> {
@@ -102,5 +122,6 @@ export async function handleMe(context: Context<{ Bindings: { DB?: AuthD1 } }>):
   if (!db || !token) return context.json({ ok: false, error: 'UNAUTHORIZED' }, 401)
   const user = await userForToken(db, token, new Date().toISOString())
   if (!user) return context.json({ ok: false, error: 'UNAUTHORIZED' }, 401)
-  return context.json({ ok: true, email: user.email })
+  const planActive = (user.plan === 'monthly' || user.plan === 'yearly') && (!user.plan_expires_at || Date.parse(user.plan_expires_at) > Date.parse(new Date().toISOString()))
+  return context.json({ ok: true, email: user.email, plan: planActive ? user.plan : 'free', planExpiresAt: user.plan_expires_at })
 }

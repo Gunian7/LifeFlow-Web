@@ -10,6 +10,9 @@ LLM_MODEL = "gpt-5.4"
 LLM_BASE_URL = "https://api.openai.com/v1"
 # Free daily AI allowance per device. Raise it for paid tiers later.
 FREE_DAILY_LIMIT = "20"
+# Paid-tier daily AI allowance. Grant plans via:
+#   curl -X POST https://<worker>/v1/admin/plan -H "X-Admin-Key: <ADMIN_KEY secret>" ...
+PRO_DAILY_LIMIT = "200"
 
 # Phase-1 quota counters live in D1. Create the database once, then paste the
 # id below — until a binding named DB exists, the quota gate fails open and

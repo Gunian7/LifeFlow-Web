@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import app from './index'
 import { deviceIdFrom, readQuota, recordUsage, type D1Like } from './quota'
+import type { AuthD1 } from './auth-routes'
 
 // Minimal in-memory D1 fake covering the two statements quota.ts uses.
 function fakeD1(): D1Like & { rows: Map<string, number> } {

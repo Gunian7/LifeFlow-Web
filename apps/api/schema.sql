@@ -10,11 +10,17 @@ CREATE TABLE IF NOT EXISTS ai_usage (
 
 -- Phase-2 accounts: email login binds the quota identity and later paid
 -- plans to a stable user instead of a device.
+-- plan: 'free' | 'monthly' | 'yearly'; plan_expires_at gates the paid tiers.
+-- For databases created before phase 3, add the columns manually:
+--   ALTER TABLE users ADD COLUMN plan TEXT NOT NULL DEFAULT 'free';
+--   ALTER TABLE users ADD COLUMN plan_expires_at TEXT;
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  plan TEXT NOT NULL DEFAULT 'free',
+  plan_expires_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS sessions (

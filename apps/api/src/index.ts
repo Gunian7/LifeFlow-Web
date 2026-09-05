@@ -7,8 +7,8 @@ import { handleBriefing, type BriefingChat } from './briefing'
 import { createChat } from './chat'
 import { createOpenAiCompatibleProvider } from './provider'
 import { dayKey, deviceIdFrom, readQuota, recordUsage } from './quota'
-import { handleLogin, handleLogout, handleMe, handleRegister, bearerToken, userForToken } from './auth-routes'
-import type { AuthD1 } from './auth-routes'
+import { handleLogin, handleLogout, handleMe, handleRegister, bearerToken, findUserByEmail, setUserPlan, userForToken } from './auth-routes'
+import type { AuthD1, Plan, UserRow } from './auth-routes'
 type Bindings = {
   PARSE_PROVIDER?: Parameters<typeof handleParse>[1]
   BRIEFING_PROVIDER?: Parameters<typeof handleBriefing>[1]
@@ -18,6 +18,8 @@ type Bindings = {
   ORDER_PROVIDER?: OrderProvider
   DB?: AuthD1
   FREE_DAILY_LIMIT?: string
+  PRO_DAILY_LIMIT?: string
+  ADMIN_KEY?: string
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
@@ -45,17 +47,28 @@ type QuotaResult =
   | { ok: false; response: Response }
 
 // Every AI endpoint goes through this gate. Logged-in users are counted by
-// their account (so the quota follows them across devices); anonymous users
-// by device. The DB-absent case fails open so the product keeps working
-// before phase-2 storage is configured.
+// their account (so the quota follows them across devices) and paid plans
+// get a higher daily allowance; anonymous users count by device. The
+// DB-absent case fails open so the product keeps working before phase-2
+// storage is configured.
+// Quota limit for a user: paid plans get the pro allowance while active.
+function limitForUser(env: Bindings | undefined, user: UserRow): number {
+  const paidActive = (user.plan === 'monthly' || user.plan === 'yearly') && (!user.plan_expires_at || Date.parse(user.plan_expires_at) > Date.parse(new Date().toISOString()))
+  return paidActive ? proDailyLimit(env) : freeLimit(env)
+}
+
 async function quotaGate(context: Context<{ Bindings: Bindings }>): Promise<QuotaResult> {
   const authHeader = context.req.header('Authorization')
   const sessionToken = bearerToken(authHeader)
   let accountKey: string | null = null
+  let accountUser: UserRow | null = null
   if (sessionToken && context.env?.DB) {
     try {
       const user = await userForToken(context.env.DB as unknown as AuthD1, sessionToken, new Date().toISOString())
-      if (user) accountKey = `user:${user.id}`
+      if (user) {
+        accountKey = `user:${user.id}`
+        accountUser = user
+      }
     } catch { /* fall through to device counting */ }
   }
   const deviceId = deviceIdFrom(context.req.header('X-LifeFlow-Device'))
@@ -64,7 +77,7 @@ async function quotaGate(context: Context<{ Bindings: Bindings }>): Promise<Quot
     return { ok: false, response: context.json({ ok: false, error: 'DEVICE_ID_REQUIRED' }, 401) }
   }
   const day = dayKey(new Date().toISOString())
-  const limit = freeLimit(context.env)
+  const limit = accountUser ? limitForUser(context.env, accountUser) : freeLimit(context.env)
   let snapshot
   try {
     snapshot = await readQuota(context.env?.DB, identity, day, limit)
@@ -75,6 +88,11 @@ async function quotaGate(context: Context<{ Bindings: Bindings }>): Promise<Quot
     return { ok: false, response: context.json({ ok: false, error: 'QUOTA_EXCEEDED', used: snapshot.used, limit: snapshot.limit }, 429) }
   }
   return { ok: true, identity, day, remaining: snapshot.remaining, mode: snapshot.mode }
+}
+
+function proDailyLimit(env?: Bindings): number {
+  const parsed = Number(env?.PRO_DAILY_LIMIT ?? 200)
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 200
 }
 
 function finish(context: { env?: Bindings }, quota: Extract<QuotaResult, { ok: true }>, response: Response): Response {
@@ -89,11 +107,20 @@ function finish(context: { env?: Bindings }, quota: Extract<QuotaResult, { ok: t
 app.get('/health', (context) => context.json({ ok: true, service: 'lifeflow-api' }))
 
 app.get('/v1/ai/quota', async (context) => {
-  const deviceId = deviceIdFrom(context.req.header('X-LifeFlow-Device'))
-  if (!deviceId) return context.json({ ok: false, error: 'DEVICE_ID_REQUIRED' }, 401)
+  const sessionToken = bearerToken(context.req.header('Authorization'))
+  let identity: string | null = null
+  let accountUser: UserRow | null = null
+  if (sessionToken && context.env?.DB) {
+    try {
+      const user = await userForToken(context.env.DB, sessionToken, new Date().toISOString())
+      if (user) { identity = `user:${user.id}`; accountUser = user }
+    } catch { /* fall through to device identity */ }
+  }
+  if (!identity) identity = deviceIdFrom(context.req.header('X-LifeFlow-Device'))
+  if (!identity) return context.json({ ok: false, error: 'DEVICE_ID_REQUIRED' }, 401)
   const day = dayKey(new Date().toISOString())
-  const limit = freeLimit(context.env)
-  const snapshot = await readQuota(context.env?.DB, deviceId, day, limit)
+  const limit = accountUser ? limitForUser(context.env, accountUser) : freeLimit(context.env)
+  const snapshot = await readQuota(context.env?.DB, identity, day, limit)
   return context.json({ ok: true, ...snapshot })
 })
 
@@ -101,6 +128,27 @@ app.post('/v1/auth/register', (context) => handleRegister(context))
 app.post('/v1/auth/login', (context) => handleLogin(context))
 app.post('/v1/auth/logout', (context) => handleLogout(context))
 app.get('/v1/auth/me', (context) => handleMe(context))
+
+// Manual plan granting until payment integration arrives: a request with the
+// admin secret sets a user's plan. Payment callbacks will replace this.
+app.post('/v1/admin/plan', async (context) => {
+  const adminKey = context.env?.ADMIN_KEY
+  if (!adminKey || context.req.header('X-Admin-Key') !== adminKey) {
+    return context.json({ ok: false, error: 'FORBIDDEN' }, 403)
+  }
+  let body: unknown
+  try { body = await context.req.json() } catch { return context.json({ ok: false, error: 'INVALID_REQUEST' }, 400) }
+  const value = body as { email?: unknown; plan?: unknown; days?: unknown }
+  const email = typeof value.email === 'string' ? value.email.trim().toLowerCase() : null
+  if (!email || !(value.plan === 'monthly' || value.plan === 'yearly' || value.plan === 'free')) {
+    return context.json({ ok: false, error: 'INVALID_REQUEST' }, 400)
+  }
+  const days = typeof value.days === 'number' && value.days > 0 ? Math.min(3650, Math.floor(value.days)) : 30
+  if (!context.env?.DB) return context.json({ ok: false, error: 'ACCOUNTS_UNAVAILABLE' }, 503)
+  const user = await setUserPlan(context.env.DB, email, value.plan, days, new Date().toISOString())
+  if (!user) return context.json({ ok: false, error: 'USER_NOT_FOUND' }, 404)
+  return context.json({ ok: true, email: user.email, plan: user.plan, planExpiresAt: user.plan_expires_at })
+})
 
 app.post('/v1/ai/order', async (context) => {
   const gate = await quotaGate(context)
