@@ -728,7 +728,13 @@ function App() {
       {searchQuery && <section className="edit-card search-card" aria-label="搜索结果">
         <p className="label">搜索结果</p>
         {searchMatches.length === 0 && <p className="settings-copy">没有匹配的任务。</p>}
-        {searchMatches.map((task) => <div className="deferred-row" key={task.id}><span>{task.title}{task.done && <small> · 已完成</small>}</span><button className="link-button" type="button" onClick={() => openEditor(task)}>改</button></div>)}
+        {searchMatches.map((task) => {
+          const idx = searchQuery ? task.title.toLowerCase().indexOf(searchQuery) : -1
+          const titleNode = idx >= 0
+            ? <>{task.title.slice(0, idx)}<mark className="search-highlight">{task.title.slice(idx, idx + searchQuery.length)}</mark>{task.title.slice(idx + searchQuery.length)}</>
+            : task.title
+          return <div className="deferred-row" key={task.id}><span>{titleNode}{task.done && <small> · 已完成</small>}</span><button className="link-button" type="button" onClick={() => openEditor(task)}>改</button></div>
+        })}
       </section>}
 
       {reviewDue && <ReviewCard items={weekReview} onFinish={finishReview} />}
