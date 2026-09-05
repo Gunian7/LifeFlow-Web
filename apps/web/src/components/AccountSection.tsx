@@ -18,6 +18,10 @@ export function AccountSection({ accountEmail, apiBaseUrl, onChanged }: AccountS
   const [notice, setNotice] = useState('')
   const [noticeTone, setNoticeTone] = useState<'info' | 'ok' | 'fail'>('info')
   const [planInfo, setPlanInfo] = useState<PlanInfo | null>(null)
+  const [redeemCode, setRedeemCode] = useState('')
+  const [redeemBusy, setRedeemBusy] = useState(false)
+  const [redeemNotice, setRedeemNotice] = useState('')
+  const [redeemTone, setRedeemTone] = useState<'ok' | 'fail'>('ok')
 
   useEffect(() => {
     if (!accountEmail) return
@@ -54,6 +58,29 @@ export function AccountSection({ accountEmail, apiBaseUrl, onChanged }: AccountS
     setNoticeTone('info'); setNotice('已退出登录。')
   }
 
+  async function doRedeem() {
+    const code = redeemCode.trim()
+    if (!code) return
+    setRedeemBusy(true); setRedeemNotice('')
+    const token = localStorage.getItem('lifeflow-auth-token-v1')
+    if (!token) { setRedeemTone('fail'); setRedeemNotice('请先登录。'); return }
+    try {
+      const response = await fetch(`${apiBaseUrl}/v1/auth/redeem`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ code }) })
+      const data = await response.json() as { ok?: boolean; error?: string; plan?: string; days?: number }
+      if (!response.ok || !data.ok) {
+        setRedeemTone('fail')
+        setRedeemNotice(data.error === 'CODE_INVALID_OR_USED' ? '兑换码无效或已被使用。' : '兑换失败，请检查后重试。')
+        return
+      }
+      setRedeemTone('ok')
+      setRedeemNotice(`兑换成功！已开通 ${data.plan === 'monthly' ? '月度' : '年度'}套餐（${data.days} 天）。`)
+      setRedeemCode('')
+      onChanged()
+    } catch {
+      setRedeemTone('fail'); setRedeemNotice('网络异常，请稍后重试。')
+    }
+  }
+
   if (accountEmail) {
     return (
       <section className="settings-section" aria-label="账号设置">
@@ -77,6 +104,14 @@ export function AccountSection({ accountEmail, apiBaseUrl, onChanged }: AccountS
         <button className="secondary-button" type="button" onClick={() => submit('login')} disabled={busy}>登录</button>
       </div>
       {notice && <p className="import-notice" style={{ color: noticeTone === 'ok' ? 'var(--success)' : noticeTone === 'fail' ? 'var(--error)' : undefined }}>{notice}</p>}
+      <div className="redeem-section">
+        <p className="label" style={{ marginTop: 14 }}>兑换码</p>
+        <div className="redeem-row-wrap">
+          <input className="redeem-input" value={redeemCode} onChange={(event) => setRedeemCode(event.target.value)} placeholder="输入兑换码" aria-label="兑换码" />
+          <button className="secondary-button" type="button" onClick={doRedeem} disabled={redeemBusy || !redeemCode.trim()}>{redeemBusy ? '核销中……' : '兑换'}</button>
+        </div>
+        {redeemNotice && <p className="import-notice" style={{ color: redeemTone === 'ok' ? 'var(--success)' : redeemTone === 'fail' ? 'var(--error)' : undefined }}>{redeemNotice}</p>}
+      </div>
     </section>
   )
 }

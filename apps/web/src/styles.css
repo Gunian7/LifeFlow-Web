@@ -110,6 +110,10 @@ html.custom-bg-on body[data-theme='archive-terminal'] { background-image: none; 
 .carryover-title { flex: 1; min-width: 0; color: var(--text); }
 .carryover-minutes { flex: 0 0 64px; text-align: right; color: var(--tertiary); font-size: 11px; font-variant-numeric: tabular-nums; }
 .carryover-actions { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin-top: 12px; }
+.redeem-section { margin-top: 14px; }
+.redeem-row-wrap { display: flex; gap: 8px; align-items: center; }
+.redeem-input { flex: 1; border: 1px solid var(--line); border-radius: 5px; padding: 9px 11px; background: var(--surface); color: var(--text); outline: 0; font: inherit; font-size: 13px; text-transform: uppercase; }
+.redeem-input:focus { border-color: var(--accent); }
 .review-card { border-style: dashed; }
 .review-card h2 { margin-bottom: 6px; }
 .review-list { margin: 12px 0 16px; padding-left: 18px; color: var(--secondary); font-size: 13px; line-height: 2; }
