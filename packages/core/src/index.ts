@@ -5,6 +5,8 @@ export type { CarryoverItem } from './carryover'
 export { completedThisWeek, weekKey } from './weekly'
 export { buildBriefingFacts } from './briefing'
 export type { BriefingFacts, BriefingInput } from './briefing'
+export { buildStatsFacts } from './stats'
+export type { StatsFacts, DayCompletion } from './stats'
 
 export type Importance = 'must' | 'important' | 'want'
 export type TaskStatus = 'inbox' | 'planned' | 'inProgress' | 'completed' | 'skipped' | 'deferred' | 'cancelled'

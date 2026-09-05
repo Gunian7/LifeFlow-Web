@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { ExistingPlanBlock, Importance, PlannerFixedBlock, PlannerTask, StoredTask, TaskDraft, RecurrenceRule, RecurringTemplate, ThemeId } from '../../../packages/core/src'
-import { buildBriefingFacts, buildExport, buildTimelineEntries, completedThisWeek, createTask, createTemplate, defaultTheme, deleteTask, editTask, getTheme, materializeOccurrences, mergeImportedTasks, parseImport, pinTask, replanToday, selectCarryoverTasks, weekKey, completeTask, uncompleteTask, unpinTask, themeIds } from '../../../packages/core/src'
+import { buildBriefingFacts, buildExport, buildStatsFacts, buildTimelineEntries, completedThisWeek, createTask, createTemplate, defaultTheme, deleteTask, editTask, getTheme, materializeOccurrences, mergeImportedTasks, parseImport, pinTask, replanToday, selectCarryoverTasks, weekKey, completeTask, uncompleteTask, unpinTask, themeIds } from '../../../packages/core/src'
 import type { FocusSession } from '../../../packages/core/src/focus'
 import { focusRemainingSeconds, pauseFocus, resumeFocus, startFocus } from '../../../packages/core/src/focus'
 import { CropEditor } from './CropEditor'
@@ -282,6 +282,15 @@ function App() {
     localStorage.setItem(BLOCKS_KEY, JSON.stringify(blocks))
   }, [blocks])
 
+  function createSubtaskTasks(subtasks: Array<{ title: string; minutes: number }>) {
+    const now = new Date().toISOString()
+    const newTasks = subtasks.map((st) => {
+      const created = createTask({ title: st.title, importance: 'important', splittable: false, targetDurationMinutes: st.minutes }, now, crypto.randomUUID())
+      return created.task!
+    })
+    setTasks((current) => [...current, ...newTasks])
+  }
+
   function handleQuickAdd(quickTitle: string, quickMinutes: number | undefined) {
     if (!quickTitle) return
     const draft: TaskDraft = { title: quickTitle, importance: 'important', splittable: false, targetDurationMinutes: quickMinutes }
@@ -439,6 +448,7 @@ function App() {
   const timelineRows = [...timelineEntries, ...blocks.filter((block) => localDate(block.startAt) === todayStr).map((block) => ({ kind: 'block' as const, title: block.title, startAt: block.startAt, endAt: block.endAt }))].sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt))
   const weekReview = completedThisWeek(tasks, now)
   const reviewDue = reviewShown !== weekKey(now) && weekReview.length > 0
+  const statsFacts = buildStatsFacts(tasks, now, 14)
 
   function finishCarryover() {
     const dropped = carryoverItems.filter((item) => !(carryoverKeeps[item.taskId] ?? true))
@@ -692,6 +702,7 @@ function App() {
         accountEmail={accountEmail}
         apiBaseUrl={apiBaseUrl}
         onAccountChanged={() => setAccountEmail(savedEmail())}
+        statsFacts={statsFacts}
       />
     </>
   )
@@ -722,7 +733,7 @@ function App() {
       <CaptureCard apiBaseUrl={apiBaseUrl} blocksOpen={blocksOpen} onQuickAdd={handleQuickAdd} onDetailedAdd={handleDetailedAdd} onOpenBlocks={() => setBlocksOpen(true)} />
       {blocksOpen && <BlocksCard todayBlocks={blocks.filter((block) => localDate(block.startAt) === todayStr)} today={todayStr} onAdd={(block) => setBlocks((current) => [...current, block])} onDelete={(id) => setBlocks((current) => current.filter((item) => item.id !== id))} onClose={() => setBlocksOpen(false)} />}
 
-      {editingTask && <EditCard key={editingTask.id} task={editingTask} templates={templates} onClose={() => setEditingTask(null)} onSaveTask={(updated) => { setTasks((current) => current.map((item) => item.id === updated.id ? updated : item)); setEditingTask(null) }} onDeleteTask={() => removeTask(editingTask.id)} onTaskFlag={setTaskFlag} onPauseRepeat={stopRepeatById} onResumeRepeat={resumeRepeatById} onDeleteRepeat={deleteRepeatById} onSetRepeat={(rule) => setRepeatForTask(editingTask, rule)} />}
+      {editingTask && <EditCard key={editingTask.id} task={editingTask} templates={templates} apiBaseUrl={apiBaseUrl} onClose={() => setEditingTask(null)} onSaveTask={(updated) => { setTasks((current) => current.map((item) => item.id === updated.id ? updated : item)); setEditingTask(null) }} onCreateSubtasks={createSubtaskTasks} onDeleteTask={() => removeTask(editingTask.id)} onTaskFlag={setTaskFlag} onPauseRepeat={stopRepeatById} onResumeRepeat={resumeRepeatById} onDeleteRepeat={deleteRepeatById} onSetRepeat={(rule) => setRepeatForTask(editingTask, rule)} />}
 
       <AiCard tasks={tasks} apiBaseUrl={apiBaseUrl} adopted={preferredOrder !== null} onAdopt={setPreferredOrder} onRestoreRules={() => setPreferredOrder(null)} />
       {searchQuery && <section className="edit-card search-card" aria-label="搜索结果">

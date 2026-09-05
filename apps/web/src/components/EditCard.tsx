@@ -3,11 +3,15 @@ import type { RecurrenceRule, RecurringTemplate, StoredTask, TaskDraft } from '.
 import { editTask, pinTask, unpinTask } from '../../../../packages/core/src'
 import { toLocalInput } from '../format'
 
+interface SubtaskDraft { title: string; minutes: number }
+
 interface EditCardProps {
   task: StoredTask
   templates: RecurringTemplate[]
+  apiBaseUrl: string
   onClose: () => void
   onSaveTask: (updated: StoredTask) => void
+  onCreateSubtasks: (subtasks: Array<{ title: string; minutes: number }>) => void
   onTaskFlag: (id: string, patch: Partial<Pick<StoredTask, 'forceToday' | 'deferredUntil'>>) => void
   onPauseRepeat: (templateId: string) => void
   onResumeRepeat: (templateId: string) => void
@@ -16,7 +20,7 @@ interface EditCardProps {
   onSetRepeat: (rule: RecurrenceRule) => void
 }
 
-export function EditCard({ task, templates, onClose, onSaveTask, onDeleteTask, onTaskFlag, onPauseRepeat, onResumeRepeat, onDeleteRepeat, onSetRepeat }: EditCardProps) {
+export function EditCard({ task, templates, apiBaseUrl, onClose, onSaveTask, onCreateSubtasks, onDeleteTask, onTaskFlag, onPauseRepeat, onResumeRepeat, onDeleteRepeat, onSetRepeat }: EditCardProps) {
   const [editTitle, setEditTitle] = useState(task.title)
   const [editMinutes, setEditMinutes] = useState(task.targetDurationMinutes?.toString() ?? '')
   const [editPlace, setEditPlace] = useState(task.place ?? '')
@@ -27,7 +31,31 @@ export function EditCard({ task, templates, onClose, onSaveTask, onDeleteTask, o
   const [editError, setEditError] = useState('')
   const [pinTime, setPinTime] = useState(task.lockedStartAt ? new Date(task.lockedStartAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '')
   const [repeatRule, setRepeatRule] = useState<RecurrenceRule | null>(null)
+  const [subtasks, setSubtasks] = useState<Array<{ title: string; minutes: number }> | null>(null)
+  const [subtaskBusy, setSubtaskBusy] = useState(false)
   const editingTemplate = task.templateId ? templates.find((item) => item.id === task.templateId) : undefined
+
+  async function askBreakdown() {
+    const mins = task.targetDurationMinutes
+    if (!mins || mins < 50) return
+    setSubtaskBusy(true)
+    try {
+      const response = await fetch(`${apiBaseUrl}/v1/ai/breakdown`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: task.title, minutes: mins }) })
+      const result = await response.json() as { ok?: boolean; subtasks?: Array<{ title: string; minutes: number }> }
+      if (!response.ok || !result.ok || !result.subtasks) throw new Error()
+      setSubtasks(result.subtasks)
+    } catch {
+      setSubtasks([])
+    } finally {
+      setSubtaskBusy(false)
+    }
+  }
+
+  function acceptSubtasks() {
+    if (!subtasks) return
+    onCreateSubtasks(subtasks)
+    setSubtasks(null)
+  }
 
   function save() {
     const rawMinutes = editMinutes.trim()
@@ -67,6 +95,12 @@ export function EditCard({ task, templates, onClose, onSaveTask, onDeleteTask, o
       <div className="repeat-panel"><span className="edit-hint">拆分</span><button className={editSplittable ? 'choice active' : 'choice'} type="button" onClick={() => setEditSplittable((value) => !value)}>{editSplittable ? '可以切小块' : '不切分'}</button><span className="edit-hint">超过 50 分钟的长任务自动按 25 分钟切块</span></div>
       <div className="edit-grid"><input type="datetime-local" value={editDeadline} onChange={(event) => setEditDeadline(event.target.value)} aria-label="截止时间" /><span className="edit-hint">截止时间，可选</span></div>
       <div className="edit-grid"><input type="time" value={pinTime} onChange={(event) => setPinTime(event.target.value)} /><span className="edit-hint">留空表示自动安排</span></div>
+      {(task.targetDurationMinutes ?? 0) >= 50 && <div className="repeat-panel"><span className="edit-hint">拆解</span><button className="link-button" type="button" onClick={askBreakdown} disabled={subtaskBusy}>{subtaskBusy ? '思考中……' : '让 AI 拆解'}</button></div>}
+      {subtasks && subtasks.length > 0 && <div className="subtask-drafts">
+        <p className="edit-hint">AI 建议拆成以下子任务：</p>
+        {subtasks.map((st, i) => <div className="subtask-draft-row" key={i}><span className="subtask-num">{i + 1}</span><span>{st.title}</span><small>{st.minutes} 分钟</small></div>)}
+        <div className="settings-actions"><button className="secondary-button" type="button" onClick={acceptSubtasks}>采纳为独立任务</button></div>
+      </div>}
       <div className="repeat-panel">
         <span className="edit-hint">重复</span>
         {!task.templateId && <><button className={repeatRule?.kind === 'daily' ? 'choice active' : 'choice'} type="button" onClick={() => setRepeatRule({ kind: 'daily', startDate: new Date().toISOString().slice(0, 10) })}>每天</button>
