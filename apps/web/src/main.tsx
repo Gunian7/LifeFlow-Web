@@ -36,6 +36,8 @@ const CARRYOVER_KEY = 'lifeflow-web-carryover-v1'
 const REVIEW_KEY = 'lifeflow-web-review-v1'
 const BLOCKS_KEY = 'lifeflow-web-blocks-v1'
 const BRIEFING_KEY = 'lifeflow-web-briefing-v1'
+const AUTODARK_KEY = 'lifeflow-web-autodark-v1'
+const UNDO_WINDOW_MS = 15000
 
 const initialNow = new Date().toISOString()
 const initialTasks: LocalTask[] = [
@@ -252,9 +254,26 @@ function App() {
   const [carryoverReviewed, setCarryoverReviewed] = useState(() => localStorage.getItem(CARRYOVER_KEY))
   const [carryoverKeeps, setCarryoverKeeps] = useState<Record<string, boolean>>({})
   const [reviewShown, setReviewShown] = useState(() => localStorage.getItem(REVIEW_KEY))
+  const [autoDark, setAutoDark] = useState(() => localStorage.getItem(AUTODARK_KEY) === 'on')
+  useEffect(() => {
+    localStorage.setItem(AUTODARK_KEY, autoDark ? 'on' : 'off')
+    const mq = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: dark)') : null
+    const apply = () => { if (autoDark && mq?.matches) setThemeId('quiet-dark') }
+    apply()
+    mq?.addEventListener('change', apply)
+    return () => mq?.removeEventListener('change', apply)
+  }, [autoDark])
   const [blocks, setBlocks] = useState<PlannerFixedBlock[]>(loadBlocks)
   const [blocksOpen, setBlocksOpen] = useState(false)
   const [briefingShownDate, setBriefingShownDate] = useState(() => localStorage.getItem(BRIEFING_KEY))
+  const [undo, setUndo] = useState<{ message: string; undo: () => void } | null>(null)
+  const undoTimer = useRef<number | undefined>(undefined)
+
+  function showUndo(message: string, restore: () => void) {
+    setUndo({ message, undo: restore })
+    if (undoTimer.current) window.clearTimeout(undoTimer.current)
+    undoTimer.current = window.setTimeout(() => setUndo(null), UNDO_WINDOW_MS)
+  }
 
   useEffect(() => {
     localStorage.setItem(BLOCKS_KEY, JSON.stringify(blocks))
@@ -281,6 +300,30 @@ function App() {
     if (deferUntil) finalTask = { ...finalTask, deferredUntil: deferUntil }
     setTasks((current) => [...current, finalTask])
   }
+
+  const [query, setQuery] = useState('')
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null
+      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return
+      if (focusSession) return
+      if (event.key === 'n' || event.key === 'N') {
+        event.preventDefault()
+        ;(document.querySelector('input[aria-label="加一件事"]') as HTMLElement | null)?.focus()
+      } else if (event.key === '/') {
+        event.preventDefault()
+        ;(document.querySelector('input[aria-label="搜索任务"]') as HTMLElement | null)?.focus()
+      } else if (event.key === 'Escape') {
+        setEditingTask(null)
+        setBlocksOpen(false)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [focusSession])
+
+  const searchQuery = query.trim().toLowerCase()
+  const searchMatches = searchQuery ? tasks.filter((task) => [task.title, task.place, task.notes].some((field) => typeof field === 'string' && field.toLowerCase().includes(searchQuery))).slice(0, 20) : []
 
   function setRepeatForTask(task: LocalTask, rule: RecurrenceRule) {
     const template = createTemplate(crypto.randomUUID(), task.title, rule, new Date().toISOString())
@@ -426,16 +469,21 @@ function App() {
   }
 
   function removeTask(id: string) {
-    const task = tasks.find((item) => item.id === id)
-    if (!task) return
-    const message = task.templateId
-      ? `删除「${task.title}」？明天仍会生成新的一件；要彻底停止请先在编辑里停止重复。`
-      : `删除「${task.title}」？`
-    if (!window.confirm(message)) return
+    const index = tasks.findIndex((item) => item.id === id)
+    if (index < 0) return
+    const task = tasks[index]
     setTasks((current) => deleteTask(current, id))
     if (selectedTaskId === id) setSelectedTaskId(null)
     if (editingTask?.id === id) setEditingTask(null)
     if (focusSession?.taskId === id) setFocusSession(null)
+    const hint = task.templateId ? '（明天会生成新的一件）' : ''
+    showUndo(`已删除「${task.title}」${hint}`, () => {
+      setTasks((current) => {
+        const next = [...current]
+        next.splice(Math.min(index, next.length), 0, task)
+        return next
+      })
+    })
   }
 
   function openEditor(task: LocalTask) {
@@ -612,7 +660,7 @@ function App() {
     )
   }
 
-  const appearanceSection = <section className="settings-section" aria-label="外观设置"><p className="label">APPEARANCE / 外观</p><h2>视觉皮肤</h2><p className="settings-copy">皮肤只改变表现方式，不改变任务、计划规则或数据归属。</p><div className="theme-picker">{themeIds.map((id) => { const option = getTheme(id); return <button className={`theme-option ${themeId === id ? 'selected' : ''}`} type="button" key={id} onClick={() => setThemeId(id)}><span className="theme-swatch" style={{ background: option.tokens.background, borderColor: option.tokens.accent }} /><span><strong>{option.name}</strong><small>{option.description}</small></span></button> })}</div><div className="bg-picker"><p className="label">背景图</p><p className="settings-copy">用一张自己的图片做页面背景。上传后拖动裁剪框决定画面，缩放滑杆控制取景范围；模糊和遮罩帮文字保持可读。它只影响外观，不影响任务数据。</p>{background.dataUrl && <div className="bg-preview" style={{ backgroundImage: `url(${background.dataUrl})` }} aria-hidden="true" />}<input ref={bgInputRef} className="file-input" type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) handleBackgroundFile(file); event.currentTarget.value = '' }} /><div className="settings-actions"><button className="secondary-button" type="button" onClick={() => bgInputRef.current?.click()}>选择图片</button>{background.dataUrl && <button className="secondary-button" type="button" onClick={() => setCropOpen(true)}>裁剪画面</button>}{background.dataUrl && <button className="secondary-button" type="button" onClick={resetBackgroundParams}>恢复默认参数</button>}{background.dataUrl && <button className="secondary-button" type="button" onClick={removeBackgroundImage}>移除背景图</button>}</div>{cropOpen && background.dataUrl && <CropEditor dataUrl={background.dataUrl} aspect={window.innerWidth / window.innerHeight} onApply={(cropped) => { setBackground((current) => ({ ...current, dataUrl: cropped })); setCropOpen(false) }} onCancel={() => setCropOpen(false)} />}{background.dataUrl && !cropOpen && <div className="bg-controls"><label>模糊<input type="range" min={0} max={24} value={background.blur} onChange={(event) => updateBackground({ blur: Number(event.target.value) })} /><span>{background.blur}px</span></label><label>遮罩<input type="range" min={0} max={85} value={background.dim} onChange={(event) => updateBackground({ dim: Number(event.target.value) })} /><span>{background.dim}%</span></label><label>饱和度<input type="range" min={0} max={200} value={background.saturate} onChange={(event) => updateBackground({ saturate: Number(event.target.value) })} /><span>{background.saturate}%</span></label></div>}{bgNotice && <p className="import-notice">{bgNotice}</p>}</div></section>
+  const appearanceSection = <section className="settings-section" aria-label="外观设置"><p className="label">APPEARANCE / 外观</p><h2>视觉皮肤</h2><p className="settings-copy">皮肤只改变表现方式，不改变任务、计划规则或数据归属。</p><div className="theme-picker">{themeIds.map((id) => { const option = getTheme(id); return <button className={`theme-option ${themeId === id ? 'selected' : ''}`} type="button" key={id} disabled={autoDark} onClick={() => setThemeId(id)}><span className="theme-swatch" style={{ background: option.tokens.background, borderColor: option.tokens.accent }} /><span><strong>{option.name}</strong><small>{option.description}</small></span></button> })}</div><label className="checkbox-line autodark-line"><input type="checkbox" checked={autoDark} onChange={(event) => setAutoDark(event.target.checked)} />系统深色时自动换到 Quiet Dark</label><div className="bg-picker"><p className="label">背景图</p><p className="settings-copy">用一张自己的图片做页面背景。上传后拖动裁剪框决定画面，缩放滑杆控制取景范围；模糊和遮罩帮文字保持可读。它只影响外观，不影响任务数据。</p>{background.dataUrl && <div className="bg-preview" style={{ backgroundImage: `url(${background.dataUrl})` }} aria-hidden="true" />}<input ref={bgInputRef} className="file-input" type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) handleBackgroundFile(file); event.currentTarget.value = '' }} /><div className="settings-actions"><button className="secondary-button" type="button" onClick={() => bgInputRef.current?.click()}>选择图片</button>{background.dataUrl && <button className="secondary-button" type="button" onClick={() => setCropOpen(true)}>裁剪画面</button>}{background.dataUrl && <button className="secondary-button" type="button" onClick={resetBackgroundParams}>恢复默认参数</button>}{background.dataUrl && <button className="secondary-button" type="button" onClick={removeBackgroundImage}>移除背景图</button>}</div>{cropOpen && background.dataUrl && <CropEditor dataUrl={background.dataUrl} aspect={window.innerWidth / window.innerHeight} onApply={(cropped) => { setBackground((current) => ({ ...current, dataUrl: cropped })); setCropOpen(false) }} onCancel={() => setCropOpen(false)} />}{background.dataUrl && !cropOpen && <div className="bg-controls"><label>模糊<input type="range" min={0} max={24} value={background.blur} onChange={(event) => updateBackground({ blur: Number(event.target.value) })} /><span>{background.blur}px</span></label><label>遮罩<input type="range" min={0} max={85} value={background.dim} onChange={(event) => updateBackground({ dim: Number(event.target.value) })} /><span>{background.dim}%</span></label><label>饱和度<input type="range" min={0} max={200} value={background.saturate} onChange={(event) => updateBackground({ saturate: Number(event.target.value) })} /><span>{background.saturate}%</span></label></div>}{bgNotice && <p className="import-notice">{bgNotice}</p>}</div></section>
   if (settingsOpen) return (
     <>
       {backgroundLayers}
@@ -646,6 +694,7 @@ function App() {
     <>
       {backgroundLayers}
       {updateReady && <div className="update-toast"><span>LifeFlow 更新好了，刷新一下就能用上新版。</span><button className="secondary-button" type="button" onClick={() => location.reload()}>刷新</button></div>}
+      {undo && <div className="undo-toast"><span>{undo.message}</span><button className="link-button" type="button" onClick={() => { undo.undo(); setUndo(null) }}>撤销</button><small>15 秒内有效</small></div>}
       <main className="shell">
       <Header tagline={tagline} today={today} themeId={themeId} onThemeChange={setThemeId} showAll={showAll} onToggleShowAll={() => setShowAll((value) => !value)} onOpenSettings={() => setSettingsOpen(true)} />
 
@@ -653,6 +702,7 @@ function App() {
 
       <div className="workspace">
         <aside className="sidebar" aria-label="导航与状态">
+          <input className="search-input" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { setQuery(''); event.currentTarget.blur() } }} placeholder="搜索任务（/）" aria-label="搜索任务" />
           <div className="side-block"><p className="side-title">现在</p><div className="side-line"><span>未完成</span><span>{tasks.filter((task) => !task.done).length}</span></div><div className="side-line"><span>已安排</span><span>{plan.planBlocks.length}</span></div></div>
           <div className="side-block"><p className="side-title">库存</p><div className="side-line"><span>未排入</span><span>{plan.unscheduledTasks.length}</span></div><div className="side-line"><span>已完成</span><span>{tasks.filter((task) => task.done).length}</span></div></div>
         </aside>
@@ -669,10 +719,16 @@ function App() {
       {editingTask && <EditCard key={editingTask.id} task={editingTask} templates={templates} onClose={() => setEditingTask(null)} onSaveTask={(updated) => { setTasks((current) => current.map((item) => item.id === updated.id ? updated : item)); setEditingTask(null) }} onDeleteTask={() => removeTask(editingTask.id)} onTaskFlag={setTaskFlag} onPauseRepeat={stopRepeatById} onResumeRepeat={resumeRepeatById} onDeleteRepeat={deleteRepeatById} onSetRepeat={(rule) => setRepeatForTask(editingTask, rule)} />}
 
       <AiCard tasks={tasks} apiBaseUrl={apiBaseUrl} adopted={preferredOrder !== null} onAdopt={setPreferredOrder} onRestoreRules={() => setPreferredOrder(null)} />
+      {searchQuery && <section className="edit-card search-card" aria-label="搜索结果">
+        <p className="label">搜索结果</p>
+        {searchMatches.length === 0 && <p className="settings-copy">没有匹配的任务。</p>}
+        {searchMatches.map((task) => <div className="deferred-row" key={task.id}><span>{task.title}{task.done && <small> · 已完成</small>}</span><button className="link-button" type="button" onClick={() => openEditor(task)}>改</button></div>)}
+      </section>}
+
       {reviewDue && <ReviewCard items={weekReview} onFinish={finishReview} />}
 
       <section className="quiet-note"><span className="note-mark">✦</span><p>排不下的时候，我会告诉你原因。<br />不会偷偷吃掉你的休息。</p></section>
-      <footer><span>本地保存 · 不需要账号</span><button className="link-button" type="button" onClick={() => setShowAll(true)}>查看全部任务</button></footer>
+      <footer><span>本地保存 · 不需要账号</span><button className="link-button" type="button" onClick={() => setShowAll(true)}>查看全部任务</button><span className="kbd-hints"><b>N</b> 新建 · <b>/</b> 搜索 · <b>Esc</b> 关闭</span></footer>
         </section>
         <DetailPanel task={selectedTask} block={selectedBlock} onOpenEditor={() => { if (selectedTask) openEditor(selectedTask) }} onStartFocus={() => { if (selectedTask) startFocusFor(selectedTask) }} />
       </div>
