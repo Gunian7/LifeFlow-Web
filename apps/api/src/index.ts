@@ -151,13 +151,20 @@ app.post('/v1/auth/login', (context) => handleLogin(context))
 app.post('/v1/auth/logout', (context) => handleLogout(context))
 app.get('/v1/auth/me', (context) => handleMe(context))
 
-// Manual plan granting until payment integration arrives: a request with the
-// admin secret sets a user's plan. Payment callbacks will replace this.
-app.post('/v1/admin/plan', async (context) => {
+// Admin authorization middleware: every /v1/admin/* route requires the
+// X-Admin-Key secret to match ADMIN_KEY. Centralized here so the guard is
+// structurally visible and cannot drift between handlers.
+app.use('/v1/admin/*', async (context, next) => {
   const adminKey = context.env?.ADMIN_KEY
   if (!adminKey || context.req.header('X-Admin-Key') !== adminKey) {
     return context.json({ ok: false, error: 'FORBIDDEN' }, 403)
   }
+  return next()
+})
+
+// Manual plan granting until payment integration arrives: a request with the
+// admin secret sets a user's plan. Payment callbacks will replace this.
+app.post('/v1/admin/plan', async (context) => {
   let body: unknown
   try { body = await context.req.json() } catch { return context.json({ ok: false, error: 'INVALID_REQUEST' }, 400) }
   const value = body as { email?: unknown; plan?: unknown; days?: unknown }

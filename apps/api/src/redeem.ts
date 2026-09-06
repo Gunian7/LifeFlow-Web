@@ -48,10 +48,7 @@ interface GenerateBindings {
 }
 
 export async function handleGenerateCodes(context: Context<{ Bindings: GenerateBindings }>): Promise<Response> {
-  const adminKey = context.env?.ADMIN_KEY
-  if (!adminKey || context.req.header('X-Admin-Key') !== adminKey) {
-    return context.json({ ok: false, error: 'FORBIDDEN' }, 403)
-  }
+  // Authorization is enforced by the /v1/admin/* middleware in index.ts.
   const raw = await context.req.json().catch(() => null) as { plan?: unknown; days?: unknown; count?: unknown } | null
   const plan = raw?.plan
   const rawDays = raw?.days
