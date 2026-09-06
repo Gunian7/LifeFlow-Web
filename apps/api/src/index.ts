@@ -37,9 +37,27 @@ const allowedOrigins = [
 app.use('*', cors({
   origin: allowedOrigins,
   allowMethods: ['GET', 'POST', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'X-LifeFlow-Device'],
+  allowHeaders: ['Content-Type', 'X-LifeFlow-Device', 'Authorization', 'X-Admin-Key'],
   exposeHeaders: ['X-Quota-Remaining', 'X-Quota-Mode'],
 }))
+
+// Baseline hardening: no sniffing, no referrer leakage, and a body cap so
+// oversized payloads never reach the model providers.
+app.use('*', async (context, next) => {
+  await next()
+  context.res.headers.set('X-Content-Type-Options', 'nosniff')
+  context.res.headers.set('Referrer-Policy', 'no-referrer')
+})
+
+const MAX_BODY_BYTES = 64 * 1024
+
+app.use('/v1/*', async (context, next) => {
+  const length = Number(context.req.header('Content-Length') ?? 0)
+  if (length > MAX_BODY_BYTES) {
+    return context.json({ ok: false, error: 'PAYLOAD_TOO_LARGE' }, 413)
+  }
+  return next()
+})
 
 function freeLimit(env?: Bindings): number {
   const parsed = Number(env?.FREE_DAILY_LIMIT ?? 20)

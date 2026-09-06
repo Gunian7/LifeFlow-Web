@@ -40,6 +40,9 @@ const BLOCKS_KEY = 'lifeflow-web-blocks-v1'
 const BRIEFING_KEY = 'lifeflow-web-briefing-v1'
 const AUTODARK_KEY = 'lifeflow-web-autodark-v1'
 const UNDO_WINDOW_MS = 15000
+const REMINDERS_KEY = 'lifeflow-web-reminders-v1'
+const NOTIFIED_KEY = 'lifeflow-web-notified-v1'
+const FOCUS_LOG_KEY = 'lifeflow-web-focuslog-v1'
 
 const initialNow = new Date().toISOString()
 const initialTasks: LocalTask[] = [
@@ -257,6 +260,7 @@ function App() {
   const [carryoverKeeps, setCarryoverKeeps] = useState<Record<string, boolean>>({})
   const [reviewShown, setReviewShown] = useState(() => localStorage.getItem(REVIEW_KEY))
   const [autoDark, setAutoDark] = useState(() => localStorage.getItem(AUTODARK_KEY) === 'on')
+  const [remindersOn, setRemindersOn] = useState(() => localStorage.getItem(REMINDERS_KEY) === 'on')
   useEffect(() => {
     localStorage.setItem(AUTODARK_KEY, autoDark ? 'on' : 'off')
     const mq = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: dark)') : null
@@ -265,6 +269,34 @@ function App() {
     mq?.addEventListener('change', apply)
     return () => mq?.removeEventListener('change', apply)
   }, [autoDark])
+
+  // Pinned-task reminders: when a task the user explicitly pinned to a time
+  // starts, fire one browser notification. Only with permission, only once
+  // per task per day, toggleable in settings.
+  useEffect(() => {
+    localStorage.setItem(REMINDERS_KEY, remindersOn ? 'on' : 'off')
+  }, [remindersOn])
+
+  useEffect(() => {
+    if (!remindersOn || typeof Notification === 'undefined' || Notification.permission !== 'granted') return
+    const nowMs = Date.parse(now)
+    const notified = new Set(JSON.parse(localStorage.getItem(NOTIFIED_KEY) ?? '[]') as string[])
+    let changed = false
+    for (const task of tasks) {
+      if (!task.lockedStartAt || task.done) continue
+      const start = Date.parse(task.lockedStartAt)
+      const key = `${task.id}|${task.lockedStartAt}`
+      if (start <= nowMs && nowMs - start < 120000 && !notified.has(key)) {
+        notified.add(key)
+        changed = true
+        try { new Notification('LifeFlow · 到点了', { body: `你把「${task.title}」钉在了这个时候。` }) } catch { /* notification failures are non-fatal */ }
+      }
+    }
+    if (changed) {
+      const recent = [...notified].slice(-100)
+      localStorage.setItem(NOTIFIED_KEY, JSON.stringify(recent))
+    }
+  }, [now, remindersOn, tasks])
   const [blocks, setBlocks] = useState<PlannerFixedBlock[]>(loadBlocks)
   const [blocksOpen, setBlocksOpen] = useState(false)
   const [briefingShownDate, setBriefingShownDate] = useState(() => localStorage.getItem(BRIEFING_KEY))
@@ -314,25 +346,6 @@ function App() {
   }
 
   const [query, setQuery] = useState('')
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      const target = event.target as HTMLElement | null
-      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return
-      if (focusSession) return
-      if (event.key === 'n' || event.key === 'N') {
-        event.preventDefault()
-        ;(document.querySelector('input[aria-label="加一件事"]') as HTMLElement | null)?.focus()
-      } else if (event.key === '/') {
-        event.preventDefault()
-        ;(document.querySelector('input[aria-label="搜索任务"]') as HTMLElement | null)?.focus()
-      } else if (event.key === 'Escape') {
-        setEditingTask(null)
-        setBlocksOpen(false)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [focusSession])
 
   const searchQuery = query.trim().toLowerCase()
   const searchMatches = searchQuery ? tasks.filter((task) => [task.title, task.place, task.notes].some((field) => typeof field === 'string' && field.toLowerCase().includes(searchQuery))).slice(0, 20) : []
@@ -449,6 +462,61 @@ function App() {
   const weekReview = completedThisWeek(tasks, now)
   const reviewDue = reviewShown !== weekKey(now) && weekReview.length > 0
   const statsFacts = buildStatsFacts(tasks, now, 14)
+  const focusMinutesWeek = useMemo(() => {
+    try {
+      const log = JSON.parse(localStorage.getItem(FOCUS_LOG_KEY) ?? '[]') as Array<{ minutes: number; endedAt: string }>
+      const weekAgo = Date.parse(now) - 7 * 86400000
+      return log.filter((entry) => Date.parse(entry.endedAt) >= weekAgo).reduce((sum, entry) => sum + entry.minutes, 0)
+    } catch { return 0 }
+  }, [now, focusSession])
+
+  const scheduledTaskIds = useMemo(() => {
+    return plan.planBlocks
+      .filter((block) => { const t = tasks.find((x) => x.id === block.taskId); return t && !t.done })
+      .sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt))
+      .map((block) => block.taskId)
+  }, [plan, tasks])
+
+  useEffect(() => {
+    if (!selectedTaskId) return
+    const el = document.querySelector('.task-row.is-selected')
+    el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [selectedTaskId])
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null
+      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return
+      if (focusSession) return
+      if (event.key === 'n' || event.key === 'N') {
+        event.preventDefault()
+        ;(document.querySelector('input[aria-label="加一件事"]') as HTMLElement | null)?.focus()
+      } else if (event.key === '/') {
+        event.preventDefault()
+        ;(document.querySelector('input[aria-label="搜索任务"]') as HTMLElement | null)?.focus()
+      } else if (event.key === 'Escape') {
+        setEditingTask(null)
+        setBlocksOpen(false)
+      } else if (event.key === 'j' || event.key === 'J') {
+        event.preventDefault()
+        const idx = scheduledTaskIds.indexOf(selectedTaskId ?? '')
+        const next = scheduledTaskIds[(idx + 1) % scheduledTaskIds.length]
+        if (next) setSelectedTaskId(next)
+      } else if (event.key === 'k' || event.key === 'K') {
+        event.preventDefault()
+        const idx = scheduledTaskIds.indexOf(selectedTaskId ?? '')
+        const prev = scheduledTaskIds[(idx - 1 + scheduledTaskIds.length) % scheduledTaskIds.length]
+        if (prev !== undefined) setSelectedTaskId(prev)
+      } else if (event.key === 'x' || event.key === 'X') {
+        if (selectedTaskId) toggleTask(selectedTaskId)
+      } else if (event.key === 'e' || event.key === 'E') {
+        const task = tasks.find((t) => t.id === selectedTaskId)
+        if (task) openEditor(task)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [focusSession, scheduledTaskIds, selectedTaskId, tasks])
 
   function finishCarryover() {
     const dropped = carryoverItems.filter((item) => !(carryoverKeeps[item.taskId] ?? true))
@@ -518,6 +586,16 @@ function App() {
 
   function endFocus() {
     if (!focusSession) return
+    const remaining = focusRemainingSeconds(focusSession, new Date().toISOString())
+    const elapsedMinutes = Math.round((focusSession.durationMinutes * 60 - remaining) / 60)
+    if (elapsedMinutes >= 1) {
+      const task = tasks.find((item) => item.id === focusSession.taskId)
+      try {
+        const log = JSON.parse(localStorage.getItem(FOCUS_LOG_KEY) ?? '[]') as Array<{ taskId: string; title: string; minutes: number; endedAt: string }>
+        log.push({ taskId: focusSession.taskId, title: task?.title ?? '一件事', minutes: elapsedMinutes, endedAt: new Date().toISOString() })
+        localStorage.setItem(FOCUS_LOG_KEY, JSON.stringify(log.slice(-200)))
+      } catch { /* log is best-effort */ }
+    }
     setFocusSession(null)
   }
 
@@ -703,6 +781,15 @@ function App() {
         apiBaseUrl={apiBaseUrl}
         onAccountChanged={() => setAccountEmail(savedEmail())}
         statsFacts={statsFacts}
+        focusMinutes={focusMinutesWeek}
+        remindersOn={remindersOn}
+        onRemindersChange={(on) => {
+          if (on && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+            void Notification.requestPermission().then((permission) => setRemindersOn(permission === 'granted'))
+          } else {
+            setRemindersOn(on)
+          }
+        }}
       />
     </>
   )
@@ -751,7 +838,7 @@ function App() {
       {reviewDue && <ReviewCard items={weekReview} onFinish={finishReview} />}
 
       <section className="quiet-note"><span className="note-mark">✦</span><p>排不下的时候，我会告诉你原因。<br />不会偷偷吃掉你的休息。</p></section>
-      <footer><span>本地保存 · 不需要账号</span><button className="link-button" type="button" onClick={() => setShowAll(true)}>查看全部任务</button><span className="kbd-hints"><b>N</b> 新建 · <b>/</b> 搜索 · <b>Esc</b> 关闭</span></footer>
+      <footer><span>本地保存 · 不需要账号</span><button className="link-button" type="button" onClick={() => setShowAll(true)}>查看全部任务</button><span className="kbd-hints"><b>N</b> 新建 · <b>J/K</b> 切换 · <b>X</b> 完成 · <b>E</b> 编辑 · <b>/</b> 搜索</span></footer>
         </section>
         <DetailPanel task={selectedTask} block={selectedBlock} onOpenEditor={() => { if (selectedTask) openEditor(selectedTask) }} onStartFocus={() => { if (selectedTask) startFocusFor(selectedTask) }} />
       </div>

@@ -2,12 +2,13 @@ import type { StatsFacts } from '../../../../packages/core/src'
 
 interface StatsSectionProps {
   facts: StatsFacts
+  focusMinutes: number
 }
 
 const BAR_COLOR: Record<string, string> = { must: 'var(--error)', important: 'var(--accent)', want: 'var(--info)' }
 const IMPORTANCE_LABEL: Record<string, string> = { must: '必须', important: '重要', want: '想做' }
 
-export function StatsSection({ facts }: StatsSectionProps) {
+export function StatsSection({ facts, focusMinutes }: StatsSectionProps) {
   const maxCompleted = Math.max(...facts.days.map((d) => d.completed), 1)
   const totalOpen = facts.openByImportance.must + facts.openByImportance.important + facts.openByImportance.want
   return (
@@ -34,7 +35,7 @@ export function StatsSection({ facts }: StatsSectionProps) {
         ))}
         <span className="stats-dist-total">共 {totalOpen} 件</span>
       </div>
-      <p className="settings-copy" style={{ marginTop: 14 }}>累计完成：{facts.totalCompleted} 件。</p>
+      <p className="settings-copy" style={{ marginTop: 14 }}>累计完成：{facts.totalCompleted} 件。近 7 天专注：{focusMinutes} 分钟。</p>
     </section>
   )
 }
